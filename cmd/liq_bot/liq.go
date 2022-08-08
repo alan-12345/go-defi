@@ -38,6 +38,49 @@ var (
 	config network_data
 )
 
+type transaction struct {
+	Hash      common.Hash
+	From      common.Address
+	To        common.Address
+	Data      string
+	Signature string
+	GasPrice  *big.Int
+}
+
+func process_pending_tx(raw_tx *types.Transaction) {
+	from, err := types.Sender(types.NewEIP155Signer(raw_tx.ChainId()), raw_tx)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	tx_data := hexutil.Encode(raw_tx.Data())
+	signature := tx_data
+	if tx_data != "0x" {
+		signature = tx_data[0:10]
+	}
+	gas_price := new(big.Float).SetInt(raw_tx.GasPrice())
+	precision := bigfloat.Pow(big.NewFloat(10), big.NewFloat(9))
+	gwei_price := new(big.Float).Quo(gas_price, precision)
+
+	tx := transaction{
+		Hash:      raw_tx.Hash(),
+		From:      from,
+		To:        *raw_tx.To(),
+		Data:      tx_data,
+		Signature: signature,
+		GasPrice:  raw_tx.GasPrice(),
+	}
+
+	fmt.Println("Hash:", tx.Hash)
+	fmt.Println("From:", tx.From)
+	fmt.Println("To:", tx.To)
+	fmt.Println("Data:", tx_data)
+	fmt.Println("Signature:", signature)
+	fmt.Println("Gas Price:", tx.GasPrice, "(", gwei_price, "Gwei )")
+	fmt.Println("------------------------------")
+}
+
 func start_bot() {
 	config = configs[*network]
 
@@ -58,7 +101,8 @@ func start_bot() {
 						fmt.Println("recovered from panic", r)
 					}
 				}()
-				tx, isPending, _ := client.TransactionByHash(context.Background(), txHash)
+				tx, isPending, err := client.TransactionByHash(context.Background(), txHash)
+				_ = err
 				// if err != nil {
 				// 	fmt.Println("tx %s TransactionByHash error: %s\n", txHash.String(), err.Error())
 				// 	return
@@ -83,20 +127,7 @@ func start_bot() {
 				// 	return
 				// }
 				if isPending {
-					from, _ := types.Sender(types.NewEIP155Signer(tx.ChainId()), tx)
-					fmt.Println("txHash: ", txHash.String())
-					fmt.Println("from: ", from.String())
-					fmt.Println("to: ", tx.To().String())
-					tx_data := hexutil.Encode(tx.Data())
-					fmt.Println("data: ", tx_data)
-					if tx_data != "0x" {
-						fmt.Println("function signature: ", tx_data[0:10])
-					}
-					gas_price := new(big.Float).SetInt(tx.GasPrice())
-					precision := bigfloat.Pow(big.NewFloat(10), big.NewFloat(9))
-					gwei_price := new(big.Float).Quo(gas_price, precision)
-					fmt.Println("gas price: ", tx.GasPrice(), "(", gwei_price, "Gwei )")
-					fmt.Println("------------------------------")
+					process_pending_tx(tx)
 				}
 			}(txHash)
 		case err := <-sub.Err():
