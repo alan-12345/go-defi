@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go_defi/addresses/polygon"
 	"go_defi/contracts/uniswap/query"
+	"go_defi/utils/array"
 	"log"
 	"math/big"
 	"time"
@@ -11,14 +12,6 @@ import (
 	"github.com/ALTree/bigfloat"
 	"github.com/ethereum/go-ethereum/common"
 )
-
-type edge struct {
-	Source common.Address
-	Dest   common.Address
-	Pair   common.Address
-	Weight *big.Float
-	Price  *big.Float
-}
 
 type pair_data struct {
 	Tokens   tokens
@@ -29,16 +22,12 @@ type pair_data struct {
 
 type tokens struct {
 	Token0     common.Address
-	Token0_Dec *big.Int
 	Token1     common.Address
-	Token1_Dec *big.Int
 }
 
 type reserves_data struct {
 	Reserve0     *big.Int
-	Reserve0_Fmt *big.Float
 	Reserve1     *big.Int
-	Reserve1_Fmt *big.Float
 }
 
 type prices_data struct {
@@ -51,26 +40,25 @@ type weights struct {
 	Weight1 *big.Float
 }
 
+type edge struct {
+	Source common.Address
+	Dest   common.Address
+	Pair   common.Address
+	Weight *big.Float
+	Price  *big.Float
+}
+
 var (
 	a          = polygon_addresses.TOKEN_ADDRS
 	rev_a      = polygon_addresses.REVERSE_NAMING
 	a_decimals = polygon_addresses.TOKEN_DECIMALS
 	factories  = polygon_addresses.FACTORY_ADDRESSES
+	all_tokens = polygon_addresses.TRADABLE_TOKENS
 	inf        = new(big.Float).SetInf(false)
 	neg_one    = new(big.Float).SetFloat64(-1)
 	one        = new(big.Float).SetFloat64(1)
 	zero       = new(big.Float).SetFloat64(0)
-	all_tokens = polygon_addresses.TRADABLE_TOKENS
 )
-
-func indexOf(element int, data []int) int {
-	for k, v := range data {
-		if element == v {
-			return k
-		}
-	}
-	return -1
-}
 
 func generate_all_pairs() [][]common.Address {
 	var pairs [][]common.Address
@@ -150,19 +138,9 @@ func get_amount_out(reserve_in *big.Int, reserve_out *big.Int, amount_in *big.In
 	return new(big.Int).Div(numerator, denominator)
 }
 
-func bellman_ford() {}
-
-func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
-	start := time.Now()
-	var pair_addrs []common.Address
-	for _, pair_addr := range raw_pair_addrs {
-		pair_addrs = append(pair_addrs, pair_addr[0])
-	}
-
-	reserves := fetch_reserves(query_contract, pair_addrs)
-
+func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[common.Address]pair_data {
 	var all_data = make(map[common.Address]pair_data)
-	for i, pair_addr := range raw_pair_addrs {
+	for i, pair_addr := range pair_addrs {
 		token_0_decimals := a_decimals[rev_a[pair_addr[1]]]
 		token_0_decimal_pow := bigfloat.Pow(big.NewFloat(10), new(big.Float).SetInt(token_0_decimals))
 		token_1_decimals := a_decimals[rev_a[pair_addr[2]]]
@@ -179,15 +157,11 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 		all_data[pair_addr[0]] = pair_data{
 			Tokens: tokens{
 				Token0:     pair_addr[1],
-				Token0_Dec: a_decimals[rev_a[pair_addr[1]]],
 				Token1:     pair_addr[2],
-				Token1_Dec: a_decimals[rev_a[pair_addr[2]]],
 			},
 			Reserves: reserves_data{
 				Reserve0:     reserves[i][0],
-				Reserve0_Fmt: reserve_0_fmt,
 				Reserve1:     reserves[i][1],
-				Reserve1_Fmt: reserve_1_fmt,
 			},
 			Prices: prices_data{
 				Price0: spot_price_0,
@@ -199,8 +173,18 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 			},
 		}
 	}
+	return all_data
+}
 
-	// add all pairs as edges (incl. duplicates)
+func generate_nodes(all_tokens []common.Address) map[common.Address]int {
+	var nodes = make(map[common.Address]int)
+	for i, token := range all_tokens {
+		nodes[token] = i
+	}
+	return nodes
+}
+
+func generate_edges(all_data map[common.Address]pair_data) []edge {
 	var edges []edge
 	for k, v := range all_data {
 		tmp_edge := edge{
@@ -249,12 +233,10 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 			edges = append(edges, tmp_edge)
 		}
 	}
+	return edges
+}
 
-	var nodes = make(map[common.Address]int)
-	for i, token := range all_tokens {
-		nodes[token] = i
-	}
-
+func bellman_ford(nodes map[common.Address]int, edges []edge) {
 	n := len(nodes)
 	distance := make([]*big.Float, n)
 	predecessor := make([]int, n)
@@ -286,7 +268,7 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 		rhs := distance[dest]
 		if lhs.Cmp(rhs) == -1 {
 			print_cycle := []int{dest, source}
-			for indexOf(predecessor[source], print_cycle) == -1 {
+			for array.IndexOf(predecessor[source], print_cycle) == -1 {
 				print_cycle = append(print_cycle, predecessor[source])
 				source = predecessor[source]
 			}
@@ -330,6 +312,25 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 			}
 		}
 	}
+}
+
+func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
+	start := time.Now()
+	var pair_addrs []common.Address
+	for _, pair_addr := range raw_pair_addrs {
+		pair_addrs = append(pair_addrs, pair_addr[0])
+	}
+
+	reserves := fetch_reserves(query_contract, pair_addrs)
+
+	all_data := compile_data(raw_pair_addrs, reserves)
+
+	edges := generate_edges(all_data)
+
+	nodes := generate_nodes(all_tokens)
+
+	bellman_ford(nodes, edges)
+
 	end := time.Now()
 	log.Println("Cycled in", end.Sub(start).String()+"\n")
 }
