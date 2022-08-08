@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/big"
 
-	"github.com/ALTree/bigfloat"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -50,7 +49,6 @@ type transaction struct {
 func process_pending_tx(raw_tx *types.Transaction) {
 	from, err := types.Sender(types.NewEIP155Signer(raw_tx.ChainId()), raw_tx)
 	if err != nil {
-		log.Println(err)
 		return
 	}
 
@@ -59,9 +57,6 @@ func process_pending_tx(raw_tx *types.Transaction) {
 	if tx_data != "0x" {
 		signature = tx_data[0:10]
 	}
-	gas_price := new(big.Float).SetInt(raw_tx.GasPrice())
-	precision := bigfloat.Pow(big.NewFloat(10), big.NewFloat(9))
-	gwei_price := new(big.Float).Quo(gas_price, precision)
 
 	tx := transaction{
 		Hash:      raw_tx.Hash(),
@@ -72,20 +67,29 @@ func process_pending_tx(raw_tx *types.Transaction) {
 		GasPrice:  raw_tx.GasPrice(),
 	}
 
-	fmt.Println("Hash:", tx.Hash)
 	fmt.Println("From:", tx.From)
 	fmt.Println("To:", tx.To)
-	fmt.Println("Data:", tx_data)
-	fmt.Println("Signature:", signature)
-	fmt.Println("Gas Price:", tx.GasPrice, "(", gwei_price, "Gwei )")
+	fmt.Println("Data:", tx.Data)
+	fmt.Println("Signature:", tx.Signature)
+	fmt.Println("Gas Price:", tx.GasPrice)
 	fmt.Println("------------------------------")
 }
 
 func start_bot() {
 	config = configs[*network]
 
-	rpc_client, _ := rpc.Dial(config.rpc)
+	fmt.Println("Running liq_bot (", *network, ")")
+
+	rpc_client, err := rpc.Dial(config.rpc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	client, err := ethclient.DialContext(context.Background(), config.rpc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	ch := make(chan common.Hash, 2000)
 	sub, err := rpc_client.EthSubscribe(context.Background(), ch, "newPendingTransactions")
 	if err != nil {
@@ -131,7 +135,7 @@ func start_bot() {
 				}
 			}(txHash)
 		case err := <-sub.Err():
-			fmt.Println(err)
+			log.Fatal(err)
 		}
 	}
 }

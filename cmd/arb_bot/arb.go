@@ -438,7 +438,15 @@ func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 func start_bot() {
 	config = configs[*network]
 
+	fmt.Println("Running arb_bot (", *network, ")")
+
 	client, err := ethclient.Dial(config.rpc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	headers := make(chan *types.Header)
+	sub, err := client.SubscribeNewHead(context.Background(), headers)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -451,12 +459,6 @@ func start_bot() {
 	pairs := generate_all_pairs()
 
 	raw_pair_addrs := fetch_pair_addrs(query_contract, pairs)
-
-	headers := make(chan *types.Header)
-	sub, err := client.SubscribeNewHead(context.Background(), headers)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	for {
 		select {
