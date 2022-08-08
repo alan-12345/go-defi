@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/addresses/ethereum"
+	"go_defi/addresses/fantom"
 	"go_defi/addresses/polygon"
 	"go_defi/contracts/uniswap/query"
 	"go_defi/utils/array"
@@ -45,6 +46,14 @@ var (
 			Tokens:        polygon_addresses.TRADABLE_TOKENS,
 			TokenDecimals: polygon_addresses.TOKEN_DECIMALS,
 			RevLookup:     polygon_addresses.REVERSE_NAMING,
+		},
+		"fantom": {
+			rpc:           fantom_addresses.RPC_URL,
+			QueryAddress:  fantom_addresses.UNISWAP_QUERY_ADDR,
+			Factories:     fantom_addresses.FACTORY_ADDRESSES,
+			Tokens:        fantom_addresses.TRADABLE_TOKENS,
+			TokenDecimals: fantom_addresses.TOKEN_DECIMALS,
+			RevLookup:     fantom_addresses.REVERSE_NAMING,
 		},
 	}
 	config network_data

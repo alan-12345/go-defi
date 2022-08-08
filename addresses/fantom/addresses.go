@@ -7,52 +7,46 @@ import (
 )
 
 const (
-	uniswap_query_addr   = "0x1090358861add9597133f64c05d7f4f5802c78d1"
-	uniswap_factory_addr = "0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f"
-	sushi_factory_addr   = "0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac"
+	uniswap_query_addr   = "0xcc686630a9a1535d736b5ce05f8177cf09c9aab2"
+	spookyswap_factory_addr = "0x152eE697f2E276fA89E96742e9bB9aB1F2E61bE3"
+	spiritswap_factory_addr   = "0xEF45d134b73241eDa7703fa787148D9C9F4950b0"
 )
 
 var (
 	RPC_URL = "wss://rpc.ankr.com/fantom/ws/09c5480d973de73d56110c6e85140402c805f6aec6b7380de71732e6e74eb16f"
 
 	UNISWAP_QUERY_ADDR   = common.HexToAddress(uniswap_query_addr)
-	UNISWAP_FACTORY_ADDR = common.HexToAddress(uniswap_factory_addr)
-	SUSHI_FACTORY_ADDR   = common.HexToAddress(sushi_factory_addr)
-	FACTORY_ADDRESSES    = []common.Address{UNISWAP_FACTORY_ADDR, SUSHI_FACTORY_ADDR}
+	SPOOKYSWAP_FACTORY_ADDR = common.HexToAddress(spookyswap_factory_addr)
+	SPIRITSWAP_FACTORY_ADDR   = common.HexToAddress(spiritswap_factory_addr)
+	FACTORY_ADDRESSES    = []common.Address{SPOOKYSWAP_FACTORY_ADDR, SPIRITSWAP_FACTORY_ADDR}
 
 	TOKEN_ADDRS = map[string]common.Address{
-		"weth": common.HexToAddress("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-		"usdt": common.HexToAddress("0xdac17f958d2ee523a2206206994597c13d831ec7"),
-		"usdc": common.HexToAddress("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-		"dai":  common.HexToAddress("0x6b175474e89094c44da98b954eedeac495271d0f"),
-		"wbtc": common.HexToAddress("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
-		"busd": common.HexToAddress("0x4fabb145d64652a948d72533023f6e7a623c7c53"),
-		"fxs":  common.HexToAddress("0x3432b6a60d23ca0dfca7761b7ab56459d9c964d0"),
-		"uni":  common.HexToAddress("0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"),
+		"wftm": common.HexToAddress("0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83"),
+		"eth": common.HexToAddress("0x74b23882a30290451A17c44f4F05243b6b58C76d"),
+		"usdt": common.HexToAddress("0x049d68029688eabf473097a2fc38ef61633a3c7a"),
+		"usdc": common.HexToAddress("0x04068da6c83afcfa0e13ba15a6696662335d5b75"),
+		"dai":  common.HexToAddress("0x8d11ec38a3eb5e956b052f67da8bdc9bef8abf3e"),
+		"btc": common.HexToAddress("0x321162Cd933E2Be498Cd2267a90534A804051b11"),
 	}
 
 	TOKEN_DECIMALS = map[string]*big.Int{
-		"weth": big.NewInt(18),
+		"wftm": big.NewInt(18),
+		"eth": big.NewInt(18),
 		"usdt": big.NewInt(6),
 		"usdc": big.NewInt(6),
 		"dai":  big.NewInt(18),
-		"wbtc": big.NewInt(8),
-		"busd": big.NewInt(18),
-		"fxs":  big.NewInt(18),
-		"uni":  big.NewInt(18),
+		"btc": big.NewInt(8),
 	}
 
 	REVERSE_NAMING = map[common.Address]string{}
 
 	TRADABLE_TOKENS = []common.Address{
-		TOKEN_ADDRS["weth"],
+		TOKEN_ADDRS["wftm"],
+		TOKEN_ADDRS["eth"],
 		TOKEN_ADDRS["usdt"],
 		TOKEN_ADDRS["usdc"],
 		TOKEN_ADDRS["dai"],
-		TOKEN_ADDRS["wbtc"],
-		TOKEN_ADDRS["busd"],
-		TOKEN_ADDRS["fxs"],
-		TOKEN_ADDRS["uni"],
+		TOKEN_ADDRS["btc"],
 	}
 )
 
