@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
-	"go_defi/addresses/polygon"
+	ethereum_addresses "go_defi/addresses/ethereum"
+	polygon_addresses "go_defi/addresses/polygon"
 	"go_defi/contracts/uniswap/query"
 	"go_defi/utils/array"
 	"log"
@@ -11,6 +14,8 @@ import (
 
 	"github.com/ALTree/bigfloat"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type pair_data struct {
@@ -21,13 +26,13 @@ type pair_data struct {
 }
 
 type tokens struct {
-	Token0     common.Address
-	Token1     common.Address
+	Token0 common.Address
+	Token1 common.Address
 }
 
 type reserves_data struct {
-	Reserve0     *big.Int
-	Reserve1     *big.Int
+	Reserve0 *big.Int
+	Reserve1 *big.Int
 }
 
 type prices_data struct {
@@ -47,6 +52,10 @@ type edge struct {
 	Weight *big.Float
 	Price  *big.Float
 }
+
+var (
+	network = flag.String("network", "polygon", "Network")
+)
 
 var (
 	a          = polygon_addresses.TOKEN_ADDRS
@@ -156,12 +165,12 @@ func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[com
 		// store all data
 		all_data[pair_addr[0]] = pair_data{
 			Tokens: tokens{
-				Token0:     pair_addr[1],
-				Token1:     pair_addr[2],
+				Token0: pair_addr[1],
+				Token1: pair_addr[2],
 			},
 			Reserves: reserves_data{
-				Reserve0:     reserves[i][0],
-				Reserve1:     reserves[i][1],
+				Reserve0: reserves[i][0],
+				Reserve1: reserves[i][1],
 			},
 			Prices: prices_data{
 				Price0: spot_price_0,
@@ -237,6 +246,8 @@ func generate_edges(all_data map[common.Address]pair_data) []edge {
 }
 
 func bellman_ford(nodes map[common.Address]int, edges []edge) {
+	start := time.Now()
+
 	n := len(nodes)
 	distance := make([]*big.Float, n)
 	predecessor := make([]int, n)
@@ -261,12 +272,15 @@ func bellman_ford(nodes map[common.Address]int, edges []edge) {
 		}
 	}
 
+	neg_cycle_count := 0
+
 	for _, edge := range edges {
 		source := nodes[edge.Source]
 		dest := nodes[edge.Dest]
 		lhs := new(big.Float).Add(distance[source], edge.Weight)
 		rhs := distance[dest]
 		if lhs.Cmp(rhs) == -1 {
+			neg_cycle_count++
 			print_cycle := []int{dest, source}
 			for array.IndexOf(predecessor[source], print_cycle) == -1 {
 				print_cycle = append(print_cycle, predecessor[source])
@@ -282,40 +296,41 @@ func bellman_ford(nodes map[common.Address]int, edges []edge) {
 				print_cycle = append(print_cycle, start)
 			}
 
-			if len(print_cycle) >= 3 {
-				var path string
-				for i, step := range print_cycle {
-					path += rev_a[all_tokens[step]]
-					if i < len(print_cycle)-1 {
-						path += " -> "
-					}
+			var path string
+			for i, step := range print_cycle {
+				path += rev_a[all_tokens[step]]
+				if i < len(print_cycle)-1 {
+					path += " -> "
 				}
-				fmt.Println(path)
-
-				// calculate profit
-				profit_multiplier := big.NewFloat(1)
-				for i := 0; i < len(print_cycle)-1; i++ {
-					source := all_tokens[print_cycle[i]]
-					dest := all_tokens[print_cycle[i+1]]
-					for _, edge := range edges {
-						if edge.Source == source && edge.Dest == dest {
-							fmt.Println(rev_a[source], "->", rev_a[dest], edge.Price)
-							profit_multiplier = new(big.Float).Mul(profit_multiplier, edge.Price)
-							continue
-						}
-					}
-				}
-				profit_percentage := new(big.Float).Sub(profit_multiplier, big.NewFloat(1))
-				profit_percentage = new(big.Float).Mul(profit_percentage, big.NewFloat(100))
-				fmt.Println("Profit percentage:", profit_percentage, "%")
-				fmt.Println("------------------------------------------")
 			}
+			fmt.Println(path)
+
+			// calculate profit
+			profit_multiplier := big.NewFloat(1)
+			for i := 0; i < len(print_cycle)-1; i++ {
+				source := all_tokens[print_cycle[i]]
+				dest := all_tokens[print_cycle[i+1]]
+				for _, edge := range edges {
+					if edge.Source == source && edge.Dest == dest {
+						fmt.Println(rev_a[source], "->", rev_a[dest], edge.Price)
+						profit_multiplier = new(big.Float).Mul(profit_multiplier, edge.Price)
+						continue
+					}
+				}
+			}
+			profit_percentage := new(big.Float).Sub(profit_multiplier, big.NewFloat(1))
+			profit_percentage = new(big.Float).Mul(profit_percentage, big.NewFloat(100))
+			fmt.Println("Profit percentage:", profit_percentage, "%")
+			fmt.Println("------------------------------------------")
 		}
 	}
+	end := time.Now()
+	log.Println("Found", neg_cycle_count, "negative cycles in", end.Sub(start).String())
 }
 
-func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
+func find_paths(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
 	start := time.Now()
+
 	var pair_addrs []common.Address
 	for _, pair_addr := range raw_pair_addrs {
 		pair_addrs = append(pair_addrs, pair_addr[0])
@@ -330,7 +345,58 @@ func arbitrage(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 	nodes := generate_nodes(all_tokens)
 
 	bellman_ford(nodes, edges)
-
 	end := time.Now()
-	log.Println("Cycled in", end.Sub(start).String()+"\n")
+	log.Println("Completed cycle in", end.Sub(start).String()+"\n")
+}
+
+func monitor(client *ethclient.Client, query_contract *query.UniswapQuery) {
+	pairs := generate_all_pairs()
+
+	raw_pair_addrs := fetch_pair_addrs(query_contract, pairs)
+
+	headers := make(chan *types.Header)
+	sub, err := client.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for {
+		select {
+		case err := <-sub.Err():
+			log.Fatal(err)
+		case header := <-headers:
+			block, err := client.BlockByHash(context.Background(), header.Hash())
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Println("New block #", block.Number().Uint64())
+
+			find_paths(query_contract, raw_pair_addrs)
+		}
+	}
+}
+
+func run_arb_bot() {
+	fmt.Println("Selected network", *network)
+	var rpc string
+	switch *network {
+	case "polygon":
+		rpc = polygon_addresses.RPC_URL
+	case "ethereum":
+		rpc = ethereum_addresses.RPC_URL
+	default:
+		log.Fatal("Invalid network")
+	}
+
+	client, err := ethclient.Dial(rpc)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	query_contract, err := query.NewUniswapQuery(polygon_addresses.UNISWAP_QUERY_ADDR, client)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	monitor(client, query_contract)
 }

@@ -1,2 +1,2 @@
 run:
-	go run cmd/arb_bot/*.go
+	go run cmd/arb_bot/*.go -network polygon

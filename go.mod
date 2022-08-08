@@ -2,10 +2,12 @@ module go_defi
 
 go 1.19
 
-require github.com/ethereum/go-ethereum v1.10.21
+require (
+	github.com/ALTree/bigfloat v0.0.0-20220102081255-38c8b72a9924
+	github.com/ethereum/go-ethereum v1.10.21
+)
 
 require (
-	github.com/ALTree/bigfloat v0.0.0-20220102081255-38c8b72a9924 // indirect
 	github.com/StackExchange/wmi v0.0.0-20180116203802-5d049714c4a6 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect

@@ -6,31 +6,20 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type token struct {
-	Token    common.Address
-	Decimals *big.Int
-}
-
 const (
 	uniswap_query_addr     = "0x6BecC50C02dEF1B4f5b0c758eCdD4449f1695a1B"
 	quickswap_factory_addr = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
-	quickswap_router_addr  = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
 	sushi_factory_addr     = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4"
-	sushi_router_addr      = "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506"
-	wrapped_matic_addr     = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"
 )
 
 var (
+	RPC_URL = "wss://ws-matic-mainnet.chainstacklabs.com"
+
 	UNISWAP_QUERY_ADDR     = common.HexToAddress(uniswap_query_addr)
 	QUICKSWAP_FACTORY_ADDR = common.HexToAddress(quickswap_factory_addr)
-	QUICKSWAP_ROUTER_ADDR  = common.HexToAddress(quickswap_router_addr)
 	SUSHI_FACTORY_ADDR     = common.HexToAddress(sushi_factory_addr)
-	SUSHI_ROUTER_ADDR      = common.HexToAddress(sushi_router_addr)
-	WRAPPED_MATIC_ADDR     = common.HexToAddress(wrapped_matic_addr)
 	FACTORY_ADDRESSES      = []common.Address{QUICKSWAP_FACTORY_ADDR, SUSHI_FACTORY_ADDR}
-)
 
-var (
 	TOKEN_ADDRS = map[string]common.Address{
 		"weth":   common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
 		"usdt":   common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
@@ -52,11 +41,11 @@ var (
 	REVERSE_NAMING = map[common.Address]string{}
 
 	TRADABLE_TOKENS = []common.Address{
-		TOKEN_ADDRS["weth"], 
-		TOKEN_ADDRS["usdt"], 
-		TOKEN_ADDRS["usdc"], 
-		TOKEN_ADDRS["wmatic"], 
-		TOKEN_ADDRS["wbtc"], 
+		TOKEN_ADDRS["weth"],
+		TOKEN_ADDRS["usdt"],
+		TOKEN_ADDRS["usdc"],
+		TOKEN_ADDRS["wmatic"],
+		TOKEN_ADDRS["wbtc"],
 		TOKEN_ADDRS["aave"],
 	}
 )
