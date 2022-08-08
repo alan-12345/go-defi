@@ -7,5 +7,5 @@ import (
 func main() {
 	flag.Parse()
 
-	run_arb_bot()
+	start_bot()
 }
