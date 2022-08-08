@@ -1,2 +1,5 @@
-run:
-	go run cmd/arb_bot/*.go -network ethereum
+arb:
+	go run cmd/arb_bot/*.go
+
+liq:
+	go run cmd/arb_bot/*.go
