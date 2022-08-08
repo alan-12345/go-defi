@@ -21,7 +21,7 @@ var (
 	FRAXSWAP_FACTORY_ADDR  = common.HexToAddress(fraxswap_factory_addr)
 	FACTORY_ADDRESSES      = []common.Address{QUICKSWAP_FACTORY_ADDR, SUSHI_FACTORY_ADDR}
 
-	ADDRESSES = map[string]common.Address{
+	TOKEN_ADDRS = map[string]common.Address{
 		"weth":   common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
 		"usdt":   common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
 		"usdc":   common.HexToAddress("0x2791bca1f2de4661ed88a30c99a7a9449aa84174"),
@@ -44,18 +44,18 @@ var (
 	REVERSE_NAMING = map[common.Address]string{}
 
 	TRADABLE_TOKENS = []common.Address{
-		ADDRESSES["weth"],
-		ADDRESSES["usdt"],
-		ADDRESSES["usdc"],
-		ADDRESSES["wmatic"],
-		ADDRESSES["wbtc"],
-		ADDRESSES["frax"],
-		ADDRESSES["dai"],
+		TOKEN_ADDRS["weth"],
+		TOKEN_ADDRS["usdt"],
+		TOKEN_ADDRS["usdc"],
+		TOKEN_ADDRS["wmatic"],
+		TOKEN_ADDRS["wbtc"],
+		TOKEN_ADDRS["frax"],
+		TOKEN_ADDRS["dai"],
 	}
 )
 
 func init() {
-	for key, value := range ADDRESSES {
+	for key, value := range TOKEN_ADDRS {
 		REVERSE_NAMING[value] = key
 	}
 }
