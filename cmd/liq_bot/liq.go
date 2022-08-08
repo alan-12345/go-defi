@@ -9,6 +9,7 @@ import (
 	"go_defi/addresses/polygon"
 	"log"
 	"math/big"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -76,6 +77,7 @@ func process_pending_tx(raw_tx *types.Transaction) {
 }
 
 func start_bot() {
+	fmt.Println(os.Getenv("PRIVATE_KEY"))
 	config = configs[*network]
 
 	fmt.Println("Running liq_bot (", *network, ")")
