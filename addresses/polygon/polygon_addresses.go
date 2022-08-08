@@ -25,6 +25,7 @@ var (
 		"weth":   common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
 		"usdt":   common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
 		"usdc":   common.HexToAddress("0x2791bca1f2de4661ed88a30c99a7a9449aa84174"),
+		"dai":    common.HexToAddress("0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"),
 		"wmatic": common.HexToAddress("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"),
 		"wbtc":   common.HexToAddress("0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6"),
 		"frax":   common.HexToAddress("0x45c32fa6df82ead1e2ef74d17b76547eddfaff89"),
@@ -34,6 +35,7 @@ var (
 		"weth":   big.NewInt(18),
 		"usdt":   big.NewInt(6),
 		"usdc":   big.NewInt(6),
+		"dai":    big.NewInt(18),
 		"wmatic": big.NewInt(18),
 		"wbtc":   big.NewInt(8),
 		"frax":   big.NewInt(18),
@@ -48,6 +50,7 @@ var (
 		ADDRESSES["wmatic"],
 		ADDRESSES["wbtc"],
 		ADDRESSES["frax"],
+		ADDRESSES["dai"],
 	}
 )
 

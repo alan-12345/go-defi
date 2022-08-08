@@ -28,7 +28,7 @@ type network_data struct {
 }
 
 var (
-	network = flag.String("network", "polygon", "Network")
+	network = flag.String("network", "ethereum", "Network")
 	configs = map[string]network_data{
 		"ethereum": {
 			rpc:           ethereum_addresses.RPC_URL,
@@ -47,6 +47,7 @@ var (
 			RevLookup:     polygon_addresses.REVERSE_NAMING,
 		},
 	}
+	config network_data
 )
 
 type pair_data struct {
@@ -92,13 +93,13 @@ var (
 	zero_addr = common.HexToAddress("0x0000000000000000000000000000000000000000")
 	inf       = new(big.Float).SetInf(false)
 	neg_inf   = new(big.Float).SetInf(true)
-	neg_one   = new(big.Float).SetFloat64(-1)
 	one       = new(big.Float).SetFloat64(1)
+	neg_one   = new(big.Float).SetFloat64(-1)
 	zero      = new(big.Float).SetFloat64(0)
 )
 
 func generate_all_pairs() [][]common.Address {
-	config := configs[*network]
+	config := config
 	var pairs [][]common.Address
 	for i := 0; i < len(config.Tokens); i++ {
 		for j := 0; j < len(config.Tokens); j++ {
@@ -118,7 +119,7 @@ func fetch_pair_addrs(query_contract *query.UniswapQuery, pairs [][]common.Addre
 	start := time.Now()
 
 	var queries = []query.PairQuery{}
-	for _, factory := range configs[*network].Factories {
+	for _, factory := range config.Factories {
 		for _, pair := range pairs {
 			queries = append(queries, query.PairQuery{Factory: factory, TokenA: pair[0], TokenB: pair[1]})
 		}
@@ -181,9 +182,9 @@ func get_amount_out(reserve_in *big.Float, reserve_out *big.Float, amount_in *bi
 func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[common.Address]pair_data {
 	var all_data = make(map[common.Address]pair_data)
 	for i, pair_addr := range pair_addrs {
-		token_0_decimals := configs[*network].TokenDecimals[configs[*network].RevLookup[pair_addr[1]]]
+		token_0_decimals := config.TokenDecimals[config.RevLookup[pair_addr[1]]]
 		token_0_decimal_pow := bigfloat.Pow(big.NewFloat(10), new(big.Float).SetInt(token_0_decimals))
-		token_1_decimals := configs[*network].TokenDecimals[configs[*network].RevLookup[pair_addr[2]]]
+		token_1_decimals := config.TokenDecimals[config.RevLookup[pair_addr[2]]]
 		token_1_decimal_pow := bigfloat.Pow(big.NewFloat(10), new(big.Float).SetInt(token_1_decimals))
 
 		reserve_0_norm := new(big.Float).Quo(new(big.Float).SetInt(reserves[i][0]), token_0_decimal_pow)
@@ -193,7 +194,6 @@ func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[com
 		weighted_price_0 := get_weighted_price(spot_price_0)
 		weighted_price_1 := get_weighted_price(spot_price_1)
 
-		// store all data
 		all_data[pair_addr[0]] = pair_data{
 			Tokens: tokens{
 				Token0: pair_addr[1],
@@ -220,7 +220,7 @@ func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[com
 
 func generate_nodes() map[common.Address]int {
 	var nodes = make(map[common.Address]int)
-	for i, token := range configs[*network].Tokens {
+	for i, token := range config.Tokens {
 		nodes[token] = i
 	}
 	return nodes
@@ -333,7 +333,7 @@ func run_bellman_ford(nodes map[common.Address]int, edges []edge_data) [][]edge_
 
 			var path string
 			for i, step := range node_path {
-				path += configs[*network].RevLookup[configs[*network].Tokens[step]]
+				path += config.RevLookup[config.Tokens[step]]
 				if i < len(node_path)-1 {
 					path += " -> "
 				}
@@ -342,8 +342,8 @@ func run_bellman_ford(nodes map[common.Address]int, edges []edge_data) [][]edge_
 
 			var edge_path []edge_data
 			for i := 0; i < len(node_path)-1; i++ {
-				source := configs[*network].Tokens[node_path[i]]
-				dest := configs[*network].Tokens[node_path[i+1]]
+				source := config.Tokens[node_path[i]]
+				dest := config.Tokens[node_path[i+1]]
 				for _, edge := range edges {
 					if edge.Source == source && edge.Dest == dest {
 						edge_path = append(edge_path, edge)
@@ -375,27 +375,30 @@ func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
 		for _, swap_amount := range swap_sizes {
 			start_amount := swap_amount
 			for _, edge := range edge_path {
-				// fmt.Println(
-				// 	configs[*network].RevLookup[edge.Source], "->",
-				// 	configs[*network].RevLookup[edge.Dest], edge.Price, "|",
-				// 	bigfloat.Pow(edge.Price, big.NewFloat(-1)),
-				// )
 				amount_out := get_amount_out(edge.ReserveSource, edge.ReserveDest, swap_amount)
-				// fmt.Println("swapped", swap_amount, configs[*network].RevLookup[edge.Source], "->", amount_out, configs[*network].RevLookup[edge.Dest])
 				swap_amount = amount_out
 			}
 			net := new(big.Float).Sub(swap_amount, start_amount)
-			// fmt.Println("Swapping", start_amount, "for", net, "\n")
 			if net.Cmp(zero) == 1 {
 				best_paths = append(best_paths, edge_path)
 			}
 		}
 	}
 
+	for _, best_path := range best_paths {
+		for _, step := range best_path {
+			fmt.Println(config.RevLookup[step.Source], "->", config.RevLookup[step.Dest])
+		}
+		fmt.Println("---------------------")
+		fmt.Println()
+	}
+
 	end := time.Now()
 	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
 	return best_paths
 }
+
+func execute_arbs(best_paths [][]edge_data) {}
 
 func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
 	start := time.Now()
@@ -415,14 +418,16 @@ func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 
 	edge_paths := run_bellman_ford(nodes, edges)
 
-	find_best_paths(edge_paths)
+	best_paths := find_best_paths(edge_paths)
+
+	execute_arbs(best_paths)
 
 	end := time.Now()
 	log.Println("Completed search in", end.Sub(start).String()+"\n")
 }
 
 func start_bot() {
-	config := configs[*network]
+	config = configs[*network]
 
 	client, err := ethclient.Dial(config.rpc)
 	if err != nil {
