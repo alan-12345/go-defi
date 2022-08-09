@@ -9,6 +9,7 @@ import (
 	"go_defi/addresses/polygon"
 	"go_defi/contracts/uniswap/query"
 	"go_defi/utils/array"
+	"go_defi/utils/crypto"
 	"log"
 	"math/big"
 	"time"
@@ -436,9 +437,10 @@ func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 }
 
 func start_bot() {
-	config = configs[*network]
-
 	fmt.Println("Running arb_bot (", *network, ")")
+	fmt.Println("Account:", crypto.GetPublicAddress())
+	
+	config = configs[*network]
 
 	client, err := ethclient.Dial(config.rpc)
 	if err != nil {

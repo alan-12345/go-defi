@@ -7,9 +7,9 @@ import (
 	"go_defi/addresses/ethereum"
 	"go_defi/addresses/fantom"
 	"go_defi/addresses/polygon"
+	"go_defi/contracts/test/test"
+	"go_defi/utils/crypto"
 	"log"
-	"math/big"
-	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -23,7 +23,7 @@ type network_data struct {
 }
 
 var (
-	network = flag.String("network", "ethereum", "Network")
+	network = flag.String("network", "fantom", "Network")
 	configs = map[string]network_data{
 		"ethereum": {
 			rpc: ethereum_addresses.RPC_URL,
@@ -39,15 +39,17 @@ var (
 )
 
 type transaction struct {
-	Hash      common.Hash
+	Hash      string
 	From      common.Address
 	To        common.Address
+	Value     string
 	Data      string
 	Signature string
-	GasPrice  *big.Int
+	Gas       uint64
+	GasPrice  uint64
 }
 
-func process_pending_tx(raw_tx *types.Transaction) {
+func process_pending_tx(client *ethclient.Client, raw_tx *types.Transaction) {
 	from, err := types.Sender(types.NewEIP155Signer(raw_tx.ChainId()), raw_tx)
 	if err != nil {
 		return
@@ -60,27 +62,58 @@ func process_pending_tx(raw_tx *types.Transaction) {
 	}
 
 	tx := transaction{
-		Hash:      raw_tx.Hash(),
+		Hash:      raw_tx.Hash().Hex(),
 		From:      from,
 		To:        *raw_tx.To(),
+		Value:     raw_tx.Value().String(),
 		Data:      tx_data,
 		Signature: signature,
-		GasPrice:  raw_tx.GasPrice(),
+		Gas:       raw_tx.Gas(),
+		GasPrice:  raw_tx.GasPrice().Uint64(),
 	}
 
-	fmt.Println("From:", tx.From)
-	fmt.Println("To:", tx.To)
-	fmt.Println("Data:", tx.Data)
-	fmt.Println("Signature:", tx.Signature)
-	fmt.Println("Gas Price:", tx.GasPrice)
-	fmt.Println("------------------------------")
+	fmt.Println("Hash:", tx.Hash, tx.Signature)
+
+	if tx.Signature == "0xf8a8fd6d" {
+		fmt.Println("Hash:", tx.Hash)
+		fmt.Println("From:", tx.From)
+		fmt.Println("To:", tx.To)
+		fmt.Println("value:", tx.Value)
+		fmt.Println("Data:", tx.Data)
+		fmt.Println("Signature:", tx.Signature)
+		fmt.Println("Gas:", tx.Gas)
+		fmt.Println("Gas Price:", tx.GasPrice)
+		fmt.Println("------------------------------")
+		front_run(client, tx)
+	}
+}
+
+func front_run(client *ethclient.Client, tx transaction) {
+	_, err := dummycontract.NewDummy(fantom_addresses.DUMMY_ADDR, client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// function_data := crypto.GetFunctionData("test()")
+
+	// opts := crypto.GetOpts(client)
+	// gasLimit := crypto.GetGasLimit(client, fantom_addresses.DUMMY_ADDR, function_data)
+	// fmt.Println(gasLimit)
+	// opts.GasLimit = gasLimit
+	// tx, err := dummy_contract.Test(opts)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// fmt.Printf("tx sent: %s", tx.Hash().Hex()) // tx sent: 0x8d490e535678e9a24360e955d75b27ad307bdfb97a1dca51d0f3035dcee3e870
+
+
 }
 
 func start_bot() {
-	fmt.Println(os.Getenv("PRIVATE_KEY"))
-	config = configs[*network]
-
 	fmt.Println("Running liq_bot (", *network, ")")
+	fmt.Println("Account:", crypto.GetPublicAddress())
+
+	config = configs[*network]
 
 	rpc_client, err := rpc.Dial(config.rpc)
 	if err != nil {
@@ -133,7 +166,7 @@ func start_bot() {
 				// 	return
 				// }
 				if isPending {
-					process_pending_tx(tx)
+					process_pending_tx(client, tx)
 				}
 			}(txHash)
 		case err := <-sub.Err():
