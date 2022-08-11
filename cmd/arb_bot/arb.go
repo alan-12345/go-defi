@@ -333,12 +333,14 @@ func run_bellman_ford(nodes map[common.Address]int, edges []edge_data) [][]edge_
 			}
 			node_path = append(node_path, predecessor[source])
 
+			// reverse array
 			for i, j := 0, len(node_path)-1; i < j; i, j = i+1, j-1 {
 				node_path[i], node_path[j] = node_path[j], node_path[i]
 			}
-			start := node_path[0]
-			if node_path[len(node_path)-1] != start {
-				node_path = append(node_path, start)
+
+			if node_path[0] != node_path[len(node_path)-1] {
+				// only add paths that start and end on same asset
+				continue
 			}
 
 			var path string
@@ -374,6 +376,8 @@ func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
 	var best_paths [][]edge_data
 	for _, edge_path := range edge_paths {
 		swap_sizes := []*big.Float{
+			big.NewFloat(0.00001),
+			big.NewFloat(0.0001),
 			big.NewFloat(0.001),
 			big.NewFloat(0.01),
 			big.NewFloat(0.1),
@@ -384,23 +388,19 @@ func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
 		}
 		for _, swap_amount := range swap_sizes {
 			start_amount := swap_amount
+			fmt.Println("Simulating swap (", start_amount, config.RevLookup[edge_path[0].Source], ")")
 			for _, edge := range edge_path {
 				amount_out := get_amount_out(edge.ReserveSource, edge.ReserveDest, swap_amount)
+				fmt.Println(swap_amount, config.RevLookup[edge.Source], "->", amount_out, config.RevLookup[edge.Dest])
 				swap_amount = amount_out
 			}
 			net := new(big.Float).Sub(swap_amount, start_amount)
 			if net.Cmp(zero) == 1 {
 				best_paths = append(best_paths, edge_path)
+				fmt.Println("^ PROFITABLE TRADE ^")
 			}
+			fmt.Println()
 		}
-	}
-
-	for _, best_path := range best_paths {
-		for _, step := range best_path {
-			fmt.Println(config.RevLookup[step.Source], "->", config.RevLookup[step.Dest])
-		}
-		fmt.Println("---------------------")
-		fmt.Println()
 	}
 
 	end := time.Now()
@@ -439,7 +439,7 @@ func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Add
 func start_bot() {
 	fmt.Println("Running arb_bot (", *network, ")")
 	fmt.Println("Account:", crypto.GetPublicAddress())
-	
+
 	config = configs[*network]
 
 	client, err := ethclient.Dial(config.rpc)

@@ -1,4 +1,4 @@
-NETWORK := fantom
+NETWORK := polygon
 
 run_arb:
 	go run cmd/arb_bot/*.go -network ${NETWORK}
