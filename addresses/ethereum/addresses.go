@@ -56,13 +56,13 @@ var (
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"): {
-			Name:     "usdc-eth (0.3%)",
+			Name:     "usdc-weth (0.3%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
 			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640"): {
-			Name:     "usdc-eth (0.05%)",
+			Name:     "usdc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
 			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",

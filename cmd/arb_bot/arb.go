@@ -7,7 +7,7 @@ import (
 	"go_defi/addresses/ethereum"
 
 	// "go_defi/addresses/fantom"
-	// "go_defi/addresses/polygon"
+	"go_defi/addresses/polygon"
 	"go_defi/contracts/curve/crypto-swap"
 	"go_defi/contracts/curve/stable-swap"
 	"go_defi/contracts/multicall"
@@ -58,7 +58,16 @@ func setup_global_data() {
 			LookUp:      ethereum_addresses.LOOKUP,
 		}
 	case "polygon":
-
+		NETWORK = constants.NetworkData{
+			RPC: polygon_addresses.RPC_URL,
+		}
+		GLOBAL = GlobalData{
+			Multicaller: polygon_addresses.MULTICALL_ADDR,
+			V3Quoter:    polygon_addresses.UNISWAP_V3_QUOTER_ADDR,
+			Pools:       polygon_addresses.ALL_POOLS,
+			Tokens:      polygon_addresses.TOKENS,
+			LookUp:      polygon_addresses.LOOKUP,
+		}
 	case "fantom":
 
 	}
