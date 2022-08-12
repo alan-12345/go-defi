@@ -63,11 +63,12 @@ func setup_network_data() {
 }
 
 type Edge struct {
-	Source constants.Token
-	Dest   constants.Token
-	Price  *big.Float
-	Weight *big.Float
-	Pool   common.Address
+	Source   constants.Token
+	Dest     constants.Token
+	Price    *big.Float
+	Weight   *big.Float
+	Pool     common.Address
+	PoolData constants.Pool
 }
 
 func generate_edges(edges *[]Edge) {
@@ -87,9 +88,10 @@ func generate_edges(edges *[]Edge) {
 		}
 		for _, pair := range pairs {
 			new_edge := Edge{
-				Source: pair[0],
-				Dest:   pair[1],
-				Pool:   address,
+				Source:   pair[0],
+				Dest:     pair[1],
+				Pool:     address,
+				PoolData: pool,
 			}
 			generated_edges = append(generated_edges, new_edge)
 		}
@@ -106,7 +108,7 @@ func populate_edges(edges *[]Edge) {
 
 	var calls []multicall.Multicall2Call
 	for _, edge := range *edges {
-		switch impl := GLOBAL.Pools[edge.Pool].Implementation; impl {
+		switch impl := edge.PoolData.Implementation; impl {
 		case "UniswapV2":
 			encoded_args := crypto.EncodeArgs(pair.UniswapPairMetaData.ABI, "getReserves")
 			calls = append(calls, multicall.Multicall2Call{
@@ -114,16 +116,16 @@ func populate_edges(edges *[]Edge) {
 				CallData: encoded_args,
 			})
 		case "CurveStableSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, GLOBAL.Pools[edge.Pool].Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, GLOBAL.Pools[edge.Pool].Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, edge.PoolData.Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, edge.PoolData.Tokens)))
 			encoded_args := crypto.EncodeArgs(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", i, j, edge.Source.Size)
 			calls = append(calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
 				CallData: encoded_args,
 			})
 		case "CurveCryptoSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, GLOBAL.Pools[edge.Pool].Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, GLOBAL.Pools[edge.Pool].Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, edge.PoolData.Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, edge.PoolData.Tokens)))
 			encoded_args := crypto.EncodeArgs(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", i, j, edge.Source.Size)
 			calls = append(calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
@@ -141,13 +143,13 @@ func populate_edges(edges *[]Edge) {
 		source_prec := edge.Source.Precision
 		dest_prec := edge.Dest.Precision
 		var price *big.Float
-		switch impl := GLOBAL.Pools[edge.Pool].Implementation; impl {
+		switch impl := edge.PoolData.Implementation; impl {
 		case "UniswapV2":
 			decoded_data := crypto.DecodeData(pair.UniswapPairMetaData.ABI, "getReserves", call)
 			reserve_0 := new(big.Float).SetInt(decoded_data[0].(*big.Int))
 			reserve_1 := new(big.Float).SetInt(decoded_data[1].(*big.Int))
 			var source_reserve, dest_reserve *big.Float
-			if GLOBAL.Pools[edge.Pool].Tokens[0] == edge.Source {
+			if edge.PoolData.Tokens[0] == edge.Source {
 				source_reserve = reserve_0
 				dest_reserve = reserve_1
 			} else {
@@ -276,13 +278,12 @@ func run_bellman_ford(paths *[][]Edge, edges []Edge) {
 				}
 			}
 			theoretical_profitability := big.NewFloat(1.0)
-			for _, path := range edge_path {
-				pool := GLOBAL.Pools[path.Pool]
-				theoretical_profitability = new(big.Float).Mul(theoretical_profitability, path.Price)
+			for _, edge := range edge_path {
+				theoretical_profitability = new(big.Float).Mul(theoretical_profitability, edge.Price)
 				fmt.Println(
-					GLOBAL.LookUp[path.Source.Address], "=>",
-					GLOBAL.LookUp[path.Dest.Address],
-					"(", pool.Protocol, ":", pool.Name, ")",
+					GLOBAL.LookUp[edge.Source.Address], "=>",
+					GLOBAL.LookUp[edge.Dest.Address],
+					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
 				)
 			}
 			edge_paths = append(edge_paths, edge_path)
@@ -332,12 +333,11 @@ func filter_profitable_paths(paths *[][]Edge) {
 		if max_profit.Cmp(constants.Zero) == 1 {
 			best_paths = append(best_paths, edge_path)
 			fmt.Println("Swap", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
-			for _, path := range edge_path {
-				pool := GLOBAL.Pools[path.Pool]
+			for _, edge := range edge_path {
 				fmt.Println(
-					GLOBAL.LookUp[path.Source.Address], "=>",
-					GLOBAL.LookUp[path.Dest.Address],
-					"(", pool.Protocol, ":", pool.Name, ")",
+					GLOBAL.LookUp[edge.Source.Address], "=>",
+					GLOBAL.LookUp[edge.Dest.Address],
+					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
 				)
 			}
 			fmt.Println("Profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
