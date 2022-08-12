@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/addresses/ethereum"
-
 	// "go_defi/addresses/fantom"
 	// "go_defi/addresses/polygon"
 	"go_defi/contracts/curve/crypto-swap"
@@ -72,6 +71,7 @@ type Edge struct {
 }
 
 func generate_edges(edges *[]Edge) {
+	start := time.Now()
 	generated_edges := []Edge{}
 	for address, pool := range global.Pools {
 		var pairs [][]constants.Token
@@ -94,6 +94,10 @@ func generate_edges(edges *[]Edge) {
 		}
 	}
 	*edges = generated_edges
+
+	end := time.Now()
+	log.Println("Generated", len(generated_edges), "edges in", end.Sub(start).String())
+	constants.PrintDashed()
 }
 
 func populate_edges(edges *[]Edge) {
@@ -176,6 +180,7 @@ func populate_edges(edges *[]Edge) {
 
 	end := time.Now()
 	log.Println("Fetched and populated", len(calls), "edge weights in", end.Sub(start).String())
+	constants.PrintDashed()
 }
 
 func filter_duplicate_edges(edges *[]Edge) {
@@ -200,9 +205,10 @@ func filter_duplicate_edges(edges *[]Edge) {
 
 	end := time.Now()
 	log.Println("Filtered through", len(*edges), "edges in", end.Sub(start).String())
+	constants.PrintDashed()
 }
 
-func run_bellman_ford(edges []Edge) [][]Edge {
+func run_bellman_ford(paths *[][]Edge, edges []Edge) {
 	start := time.Now()
 
 	var nodes []constants.Token
@@ -266,7 +272,6 @@ func run_bellman_ford(edges []Edge) [][]Edge {
 					}
 				}
 			}
-
 			theoretical_profitability := big.NewFloat(1.0)
 			for _, path := range edge_path {
 				pool := global.Pools[path.Pool]
@@ -277,58 +282,71 @@ func run_bellman_ford(edges []Edge) [][]Edge {
 					"(", pool.Protocol, ":", pool.Name, ")",
 				)
 			}
+			edge_paths = append(edge_paths, edge_path)
 			theoretical_profitability = new(big.Float).Sub(theoretical_profitability, big.NewFloat(1))
 			theoretical_profitability = new(big.Float).Mul(theoretical_profitability, big.NewFloat(100))
 			fmt.Println("Theoretical profitability:", theoretical_profitability, "%")
-			fmt.Println("--------------------------")
-
-			edge_paths = append(edge_paths, edge_path)
+			fmt.Println()
 		}
 	}
+	*paths = edge_paths
 
 	end := time.Now()
 	log.Println("Found", len(edge_paths), "negative cycles in", end.Sub(start).String())
-
-	return edge_paths
+	constants.PrintDashed()
 }
 
-// func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
-// 	start := time.Now()
+func filter_profitable_paths(paths *[][]Edge) {
+	start := time.Now()
 
-// 	var best_paths [][]edge_data
-// 	for _, edge_path := range edge_paths {
-// 		swap_sizes := []*big.Float{
-// 			big.NewFloat(0.00001),
-// 			big.NewFloat(0.0001),
-// 			big.NewFloat(0.001),
-// 			big.NewFloat(0.01),
-// 			big.NewFloat(0.1),
-// 			big.NewFloat(1),
-// 			big.NewFloat(10),
-// 			big.NewFloat(100),
-// 			big.NewFloat(1000),
-// 		}
-// 		for _, swap_amount := range swap_sizes {
-// 			start_amount := swap_amount
-// 			fmt.Println("Simulating swap (", start_amount, config.RevLookup[edge_path[0].Source], ")")
-// 			for _, edge := range edge_path {
-// 				amount_out := get_amount_out(edge.ReserveSource, edge.ReserveDest, swap_amount)
-// 				fmt.Println(swap_amount, config.RevLookup[edge.Source], "->", amount_out, config.RevLookup[edge.Dest])
-// 				swap_amount = amount_out
-// 			}
-// 			net := new(big.Float).Sub(swap_amount, start_amount)
-// 			if net.Cmp(zero) == 1 {
-// 				best_paths = append(best_paths, edge_path)
-// 				fmt.Println("^ PROFITABLE TRADE ^")
-// 			}
-// 			fmt.Println()
-// 		}
-// 	}
+	var best_paths [][]Edge
+	for _, edge_path := range *paths {
+		swap_sizes := []*big.Float{
+			big.NewFloat(0.00001),
+			big.NewFloat(0.0001),
+			big.NewFloat(0.001),
+			big.NewFloat(0.01),
+			big.NewFloat(0.1),
+			big.NewFloat(1),
+			big.NewFloat(10),
+			big.NewFloat(100),
+			big.NewFloat(1000),
+		}
+		optimal_size := swap_sizes[0]
+		max_profit := new(big.Float).SetInf(true)
+		for _, swap_amount := range swap_sizes {
+			start_amount := swap_amount
+			for _, edge := range edge_path {
+				amount_out := new(big.Float).Mul(swap_amount, edge.Price)
+				swap_amount = amount_out
+			}
+			net := new(big.Float).Sub(swap_amount, start_amount)
+			if net.Cmp(max_profit) == 1 {
+				optimal_size = start_amount
+				max_profit = net
+			}
+		}
+		if max_profit.Cmp(constants.Zero) == 1 {
+			best_paths = append(best_paths, edge_path)
+			fmt.Println("Swap", optimal_size, global.LookUp[edge_path[0].Source.Address])
+			for _, path := range edge_path {
+				pool := global.Pools[path.Pool]
+				fmt.Println(
+					global.LookUp[path.Source.Address], "=>",
+					global.LookUp[path.Dest.Address],
+					"(", pool.Protocol, ":", pool.Name, ")",
+				)
+			}
+			fmt.Println("Profit:", max_profit, global.LookUp[edge_path[0].Source.Address])
+			fmt.Println()
+		}
+	}
+	*paths = best_paths
 
-// 	end := time.Now()
-// 	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
-// 	return best_paths
-// }
+	end := time.Now()
+	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
+	constants.PrintDashed()
+}
 
 func execute_arbs(best_paths [][]Edge) {}
 
@@ -343,15 +361,17 @@ func find_arbs() {
 
 	filter_duplicate_edges(&edges)
 
-	paths := run_bellman_ford(edges)
-	_ = paths
+	var paths [][]Edge
 
-	// best_paths := find_best_paths(edge_paths)
+	run_bellman_ford(&paths, edges)
+
+	filter_profitable_paths(&paths)
 
 	// execute_arbs(best_paths)
 
 	end := time.Now()
-	log.Println("Completed search in", end.Sub(start).String()+"\n")
+	log.Println("Completed search in", end.Sub(start).String())
+	constants.PrintDashed()
 }
 
 func start_bot() {
@@ -375,7 +395,8 @@ func start_bot() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			log.Println("New block #", block.Number().Uint64())
+			fmt.Println("New block #", block.Number().Uint64())
+			constants.PrintDashed()
 
 			find_arbs()
 		}

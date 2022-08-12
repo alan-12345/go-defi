@@ -1,14 +1,16 @@
 package constants
 
 import (
+	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type Token struct {
 	Address   common.Address
-	Precision  *big.Int
+	Precision *big.Int
 	Size      *big.Int
 }
 
@@ -28,3 +30,7 @@ var (
 	Zero        = new(big.Float).SetFloat64(0)
 	TenInt      = big.NewInt(10)
 )
+
+func PrintDashed() {
+	fmt.Println(strings.Repeat("-", 75))
+}

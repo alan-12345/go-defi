@@ -67,6 +67,31 @@ var (
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["usdt"]},
 			Protocol: "UniswapV2",
 		},
+		common.HexToAddress("0xbb2b8038a1640196fbe3e38816f3e67cba72d940"): {
+			Name:     "wbtc-weth",
+			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["weth"]},
+			Protocol: "UniswapV2",
+		},
+		common.HexToAddress("0x397ff1542f962076d0bfe58ea045ffa2d347aca0"): {
+			Name:     "usdc-weth",
+			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
+			Protocol: "SushiSwap",
+		},
+		common.HexToAddress("0x06da0fd433c1a5d7a4faa01111c044910a184553"): {
+			Name:     "weth-usdt",
+			Tokens:   []constants.Token{TOKENS["weth"], TOKENS["usdt"]},
+			Protocol: "SushiSwap",
+		},
+		common.HexToAddress("0xceff51756c56ceffca006cd410b03ffc46dd3a58"): {
+			Name:     "wbtc-weth",
+			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["weth"]},
+			Protocol: "SushiSwap",
+		},
+		common.HexToAddress("0xc3d03e4f041fd4cd388c549ee2a29a9e5075882f"): {
+			Name:     "dai-weth",
+			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["weth"]},
+			Protocol: "SushiSwap",
+		},
 	}
 
 	CURVE_STABLE_POOLS = map[common.Address]constants.Pool{
