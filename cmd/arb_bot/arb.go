@@ -10,7 +10,7 @@ import (
 	"go_defi/contracts/curve/crypto-swap"
 	"go_defi/contracts/curve/stable-swap"
 	"go_defi/contracts/multicall"
-	"go_defi/contracts/uniswap/pair"
+	"go_defi/contracts/uniswap/v2/pair"
 	"go_defi/utils/array"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
@@ -34,15 +34,15 @@ type NetworkData struct {
 }
 
 var (
-	selected_network = flag.String("network", "ethereum", "Network")
-	global           NetworkData
+	SELECTED_NETWORK = flag.String("network", "ethereum", "Network")
+	GLOBAL           NetworkData
 )
 
 func setup_network_data() {
-	fmt.Println("Selected Network:", *selected_network)
-	switch *selected_network {
+	fmt.Println("Selected Network:", *SELECTED_NETWORK)
+	switch *SELECTED_NETWORK {
 	case "ethereum":
-		global = NetworkData{
+		GLOBAL = NetworkData{
 			RPC:         ethereum_addresses.RPC_URL,
 			Multicaller: ethereum_addresses.MULTICALL_ADDR,
 			Pools:       ethereum_addresses.ALL_POOLS,
@@ -55,11 +55,11 @@ func setup_network_data() {
 
 	}
 
-	client, err := ethclient.Dial(global.RPC)
+	client, err := ethclient.Dial(GLOBAL.RPC)
 	if err != nil {
 		log.Fatal(err)
 	}
-	global.Client = client
+	GLOBAL.Client = client
 }
 
 type Edge struct {
@@ -72,8 +72,9 @@ type Edge struct {
 
 func generate_edges(edges *[]Edge) {
 	start := time.Now()
+
 	generated_edges := []Edge{}
-	for address, pool := range global.Pools {
+	for address, pool := range GLOBAL.Pools {
 		var pairs [][]constants.Token
 		tokens := pool.Tokens
 		for i := 0; i < len(tokens); i++ {
@@ -102,9 +103,10 @@ func generate_edges(edges *[]Edge) {
 
 func populate_edges(edges *[]Edge) {
 	start := time.Now()
+
 	var calls []multicall.Multicall2Call
 	for _, edge := range *edges {
-		switch impl := global.Pools[edge.Pool].Implementation; impl {
+		switch impl := GLOBAL.Pools[edge.Pool].Implementation; impl {
 		case "UniswapV2":
 			encoded_args := crypto.EncodeArgs(pair.UniswapPairMetaData.ABI, "getReserves")
 			calls = append(calls, multicall.Multicall2Call{
@@ -112,16 +114,16 @@ func populate_edges(edges *[]Edge) {
 				CallData: encoded_args,
 			})
 		case "CurveStableSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, global.Pools[edge.Pool].Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, global.Pools[edge.Pool].Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, GLOBAL.Pools[edge.Pool].Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, GLOBAL.Pools[edge.Pool].Tokens)))
 			encoded_args := crypto.EncodeArgs(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", i, j, edge.Source.Size)
 			calls = append(calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
 				CallData: encoded_args,
 			})
 		case "CurveCryptoSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, global.Pools[edge.Pool].Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, global.Pools[edge.Pool].Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, GLOBAL.Pools[edge.Pool].Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, GLOBAL.Pools[edge.Pool].Tokens)))
 			encoded_args := crypto.EncodeArgs(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", i, j, edge.Source.Size)
 			calls = append(calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
@@ -130,7 +132,7 @@ func populate_edges(edges *[]Edge) {
 		}
 	}
 	encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
-	encoded_output := crypto.StaticCall(global.Client, global.Multicaller, encoded_calls)
+	encoded_output := crypto.StaticCall(GLOBAL.Client, GLOBAL.Multicaller, encoded_calls)
 	decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
 
 	populated_edges := []Edge{}
@@ -139,13 +141,13 @@ func populate_edges(edges *[]Edge) {
 		source_prec := edge.Source.Precision
 		dest_prec := edge.Dest.Precision
 		var price *big.Float
-		switch impl := global.Pools[edge.Pool].Implementation; impl {
+		switch impl := GLOBAL.Pools[edge.Pool].Implementation; impl {
 		case "UniswapV2":
 			decoded_data := crypto.DecodeData(pair.UniswapPairMetaData.ABI, "getReserves", call)
 			reserve_0 := new(big.Float).SetInt(decoded_data[0].(*big.Int))
 			reserve_1 := new(big.Float).SetInt(decoded_data[1].(*big.Int))
 			var source_reserve, dest_reserve *big.Float
-			if global.Pools[edge.Pool].Tokens[0] == edge.Source {
+			if GLOBAL.Pools[edge.Pool].Tokens[0] == edge.Source {
 				source_reserve = reserve_0
 				dest_reserve = reserve_1
 			} else {
@@ -185,6 +187,7 @@ func populate_edges(edges *[]Edge) {
 
 func filter_duplicate_edges(edges *[]Edge) {
 	start := time.Now()
+
 	var seen_edges []Edge
 	for _, edge := range *edges {
 		seen := false
@@ -212,7 +215,7 @@ func run_bellman_ford(paths *[][]Edge, edges []Edge) {
 	start := time.Now()
 
 	var nodes []constants.Token
-	for _, token := range global.Tokens {
+	for _, token := range GLOBAL.Tokens {
 		nodes = append(nodes, token)
 	}
 
@@ -274,11 +277,11 @@ func run_bellman_ford(paths *[][]Edge, edges []Edge) {
 			}
 			theoretical_profitability := big.NewFloat(1.0)
 			for _, path := range edge_path {
-				pool := global.Pools[path.Pool]
+				pool := GLOBAL.Pools[path.Pool]
 				theoretical_profitability = new(big.Float).Mul(theoretical_profitability, path.Price)
 				fmt.Println(
-					global.LookUp[path.Source.Address], "=>",
-					global.LookUp[path.Dest.Address],
+					GLOBAL.LookUp[path.Source.Address], "=>",
+					GLOBAL.LookUp[path.Dest.Address],
 					"(", pool.Protocol, ":", pool.Name, ")",
 				)
 			}
@@ -328,16 +331,16 @@ func filter_profitable_paths(paths *[][]Edge) {
 		}
 		if max_profit.Cmp(constants.Zero) == 1 {
 			best_paths = append(best_paths, edge_path)
-			fmt.Println("Swap", optimal_size, global.LookUp[edge_path[0].Source.Address])
+			fmt.Println("Swap", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
 			for _, path := range edge_path {
-				pool := global.Pools[path.Pool]
+				pool := GLOBAL.Pools[path.Pool]
 				fmt.Println(
-					global.LookUp[path.Source.Address], "=>",
-					global.LookUp[path.Dest.Address],
+					GLOBAL.LookUp[path.Source.Address], "=>",
+					GLOBAL.LookUp[path.Dest.Address],
 					"(", pool.Protocol, ":", pool.Name, ")",
 				)
 			}
-			fmt.Println("Profit:", max_profit, global.LookUp[edge_path[0].Source.Address])
+			fmt.Println("Profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
 			fmt.Println()
 		}
 	}
@@ -381,7 +384,7 @@ func start_bot() {
 	setup_network_data()
 
 	headers := make(chan *types.Header)
-	sub, err := global.Client.SubscribeNewHead(context.Background(), headers)
+	sub, err := GLOBAL.Client.SubscribeNewHead(context.Background(), headers)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -391,7 +394,7 @@ func start_bot() {
 		case err := <-sub.Err():
 			log.Fatal(err)
 		case header := <-headers:
-			block, err := global.Client.BlockByHash(context.Background(), header.Hash())
+			block, err := GLOBAL.Client.BlockByHash(context.Background(), header.Hash())
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	RPC_URL        = "wss://distinguished-holy-market.discover.quiknode.pro/8580eb52f1b8248ac369d3f4509c78016ad4b9e4/"
-	MULTICALL_ADDR = common.HexToAddress("0x5BA1e12693Dc8F9c48aAD8770482f4739bEeD696")
+	RPC_URL                = "wss://distinguished-holy-market.discover.quiknode.pro/8580eb52f1b8248ac369d3f4509c78016ad4b9e4/"
+	MULTICALL_ADDR         = common.HexToAddress("0x5BA1e12693Dc8F9c48aAD8770482f4739bEeD696")
+	UNISWAP_V3_QUOTER_ADDR = common.HexToAddress("0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6")
 
 	TOKENS = map[string]constants.Token{
 		"dai": {
