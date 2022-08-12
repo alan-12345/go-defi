@@ -46,31 +46,43 @@ var (
 		common.HexToAddress("0x5777d92f208679db4b9778590fa3cab3ac9e2168"): {
 			Name:     "dai-usdc (0.01%)",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"]},
+			Fee:      constants.PointZeroOnePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x6c6bc977e13df9b0de53b251522280bb72383700"): {
 			Name:     "dai-usdc (0.05%)",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"]},
+			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"): {
 			Name:     "usdc-eth (0.3%)",
-			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["eth"]},
+			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
+			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640"): {
 			Name:     "usdc-eth (0.05%)",
-			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["eth"]},
+			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
+			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x3416cf6c708da44db2624d63ea0aaef7113527c6"): {
 			Name:     "usdc-usdt (0.01%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["usdt"]},
+			Fee:      constants.PointZeroOnePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x4585fe77225b41b697c938b018e2ac67ac5a20c0"): {
 			Name:     "wbtc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["weth"]},
+			Fee:      constants.PointZeroFivePercent,
+			Protocol: "UniswapV3",
+		},
+		common.HexToAddress("0x11b815efb8f581194ae79006d24e0d814b7697f6"): {
+			Name:     "weth-usdt (0.05%)",
+			Tokens:   []constants.Token{TOKENS["weth"], TOKENS["usdt"]},
+			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 	}
@@ -148,10 +160,10 @@ var (
 )
 
 func init() {
-	// for k, v := range UNISWAP_V3_POOLS {
-	// 	v.Implementation = "UniswapV3"
-	// 	ALL_POOLS[k] = v
-	// }
+	for k, v := range UNISWAP_V3_POOLS {
+		v.Implementation = "UniswapV3"
+		ALL_POOLS[k] = v
+	}
 
 	for k, v := range UNISWAP_V2_LIKE_POOLS {
 		v.Implementation = "UniswapV2"

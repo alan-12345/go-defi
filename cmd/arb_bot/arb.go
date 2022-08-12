@@ -5,12 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/addresses/ethereum"
+
 	// "go_defi/addresses/fantom"
 	// "go_defi/addresses/polygon"
 	"go_defi/contracts/curve/crypto-swap"
 	"go_defi/contracts/curve/stable-swap"
 	"go_defi/contracts/multicall"
 	"go_defi/contracts/uniswap/v2/pair"
+	"go_defi/contracts/uniswap/v3/quoter"
 	"go_defi/utils/array"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
@@ -24,10 +26,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type NetworkData struct {
-	Client      *ethclient.Client
-	RPC         string
+type GlobalData struct {
 	Multicaller common.Address
+	V3Quoter    common.Address
 	Pools       map[common.Address]constants.Pool
 	Tokens      map[string]constants.Token
 	LookUp      map[common.Address]string
@@ -35,16 +36,23 @@ type NetworkData struct {
 
 var (
 	SELECTED_NETWORK = flag.String("network", "ethereum", "Network")
-	GLOBAL           NetworkData
+	NETWORK          constants.NetworkData
+	GLOBAL           GlobalData
 )
 
-func setup_network_data() {
-	fmt.Println("Selected Network:", *SELECTED_NETWORK)
+func setup_global_data() {
+	constants.PrintDashed()
+	log.Println("Running arb_bot")
+	fmt.Println("Account:", crypto.GetPublicAddress())
+
 	switch *SELECTED_NETWORK {
 	case "ethereum":
-		GLOBAL = NetworkData{
-			RPC:         ethereum_addresses.RPC_URL,
+		NETWORK = constants.NetworkData{
+			RPC: ethereum_addresses.RPC_URL,
+		}
+		GLOBAL = GlobalData{
 			Multicaller: ethereum_addresses.MULTICALL_ADDR,
+			V3Quoter:    ethereum_addresses.UNISWAP_V3_QUOTER_ADDR,
 			Pools:       ethereum_addresses.ALL_POOLS,
 			Tokens:      ethereum_addresses.TOKENS,
 			LookUp:      ethereum_addresses.LOOKUP,
@@ -55,11 +63,23 @@ func setup_network_data() {
 
 	}
 
-	client, err := ethclient.Dial(GLOBAL.RPC)
+	client, err := ethclient.Dial(NETWORK.RPC)
 	if err != nil {
 		log.Fatal(err)
 	}
-	GLOBAL.Client = client
+
+	headers := make(chan *types.Header)
+	sub, err := client.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	NETWORK.Client = client
+	NETWORK.Headers = headers
+	NETWORK.Subscription = sub
+
+	fmt.Println("Network:", *SELECTED_NETWORK)
+	constants.PrintDashed()
 }
 
 type Edge struct {
@@ -99,42 +119,70 @@ func generate_edges(edges *[]Edge) {
 	*edges = generated_edges
 
 	end := time.Now()
-	log.Println("Generated", len(generated_edges), "edges in", end.Sub(start).String())
+	log.Println("Generated", len(*edges), "edges in", end.Sub(start).String())
 	constants.PrintDashed()
 }
 
-func populate_edges(edges *[]Edge) {
+func generate_calls(edges []Edge, calls *[]multicall.Multicall2Call) {
 	start := time.Now()
 
-	var calls []multicall.Multicall2Call
-	for _, edge := range *edges {
-		switch impl := edge.PoolData.Implementation; impl {
+	var generated_calls []multicall.Multicall2Call
+	for _, edge := range edges {
+		pool := edge.PoolData
+		switch impl := pool.Implementation; impl {
 		case "UniswapV2":
 			encoded_args := crypto.EncodeArgs(pair.UniswapPairMetaData.ABI, "getReserves")
-			calls = append(calls, multicall.Multicall2Call{
+			generated_calls = append(generated_calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
 				CallData: encoded_args,
 			})
 		case "CurveStableSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, edge.PoolData.Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, edge.PoolData.Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, pool.Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, pool.Tokens)))
 			encoded_args := crypto.EncodeArgs(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", i, j, edge.Source.Size)
-			calls = append(calls, multicall.Multicall2Call{
+			generated_calls = append(generated_calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
 				CallData: encoded_args,
 			})
 		case "CurveCryptoSwap":
-			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, edge.PoolData.Tokens)))
-			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, edge.PoolData.Tokens)))
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, pool.Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, pool.Tokens)))
 			encoded_args := crypto.EncodeArgs(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", i, j, edge.Source.Size)
-			calls = append(calls, multicall.Multicall2Call{
+			generated_calls = append(generated_calls, multicall.Multicall2Call{
 				Target:   edge.Pool,
+				CallData: encoded_args,
+			})
+		case "UniswapV3":
+			fee_fmt := new(big.Float).Mul(pool.Fee, big.NewFloat(1e6))
+			fee_int64, _ := fee_fmt.Int64()
+			fee_int := big.NewInt(fee_int64)
+			encoded_args := crypto.EncodeArgs(quoter.UniswapV3QuoterMetaData.ABI,
+				"quoteExactInputSingle",
+				edge.Source.Address,
+				edge.Dest.Address,
+				fee_int,
+				edge.Source.Size,
+				big.NewInt(0),
+			)
+			generated_calls = append(generated_calls, multicall.Multicall2Call{
+				Target:   GLOBAL.V3Quoter,
 				CallData: encoded_args,
 			})
 		}
 	}
+
+	*calls = generated_calls
+
+	end := time.Now()
+	log.Println("Generated", len(*calls), "network calls in", end.Sub(start).String())
+	constants.PrintDashed()
+}
+
+func populate_edges(calls []multicall.Multicall2Call, edges *[]Edge) {
+	start := time.Now()
+
 	encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
-	encoded_output := crypto.StaticCall(GLOBAL.Client, GLOBAL.Multicaller, encoded_calls)
+	encoded_output := crypto.StaticCall(NETWORK.Client, GLOBAL.Multicaller, encoded_calls)
 	decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
 
 	populated_edges := []Edge{}
@@ -173,6 +221,13 @@ func populate_edges(edges *[]Edge) {
 			amount_in := new(big.Float).SetInt(edge.Source.Size)
 			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
 			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+		case "UniswapV3":
+			decoded_data := crypto.DecodeData(quoter.UniswapV3QuoterMetaData.ABI, "quoteExactInputSingle", call)
+			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
+			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
+			amount_in := new(big.Float).SetInt(edge.Source.Size)
+			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
+			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
 		}
 		edge.Price = price
 		lg := bigfloat.Log(price)
@@ -183,7 +238,7 @@ func populate_edges(edges *[]Edge) {
 	*edges = populated_edges
 
 	end := time.Now()
-	log.Println("Fetched and populated", len(calls), "edge weights in", end.Sub(start).String())
+	log.Println("Fetched and populated", len(*edges), "edge weights in", end.Sub(start).String())
 	constants.PrintDashed()
 }
 
@@ -209,11 +264,11 @@ func filter_duplicate_edges(edges *[]Edge) {
 	*edges = seen_edges
 
 	end := time.Now()
-	log.Println("Filtered through", len(*edges), "edges in", end.Sub(start).String())
+	log.Println("Filtered to", len(*edges), "unique edges in", end.Sub(start).String())
 	constants.PrintDashed()
 }
 
-func run_bellman_ford(paths *[][]Edge, edges []Edge) {
+func run_bellman_ford(edges []Edge, paths *[][]Edge) {
 	start := time.Now()
 
 	var nodes []constants.Token
@@ -296,7 +351,7 @@ func run_bellman_ford(paths *[][]Edge, edges []Edge) {
 	*paths = edge_paths
 
 	end := time.Now()
-	log.Println("Found", len(edge_paths), "negative cycles in", end.Sub(start).String())
+	log.Println("Detected", len(*paths), "negative cycles in", end.Sub(start).String())
 	constants.PrintDashed()
 }
 
@@ -347,61 +402,56 @@ func filter_profitable_paths(paths *[][]Edge) {
 	*paths = best_paths
 
 	end := time.Now()
-	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
+	log.Println("Detected", len(*paths), "profitable arbs in", end.Sub(start).String())
 	constants.PrintDashed()
 }
 
 func execute_arbs(best_paths [][]Edge) {}
 
 func find_arbs() {
-	start := time.Now()
-
 	var edges []Edge
-
 	generate_edges(&edges)
 
-	populate_edges(&edges)
-
-	filter_duplicate_edges(&edges)
-
-	var paths [][]Edge
-
-	run_bellman_ford(&paths, edges)
-
-	filter_profitable_paths(&paths)
-
-	// execute_arbs(best_paths)
-
-	end := time.Now()
-	log.Println("Completed search in", end.Sub(start).String())
-	constants.PrintDashed()
-}
-
-func start_bot() {
-	fmt.Println("Running arb_bot")
-	fmt.Println("Account:", crypto.GetPublicAddress())
-
-	setup_network_data()
-
-	headers := make(chan *types.Header)
-	sub, err := GLOBAL.Client.SubscribeNewHead(context.Background(), headers)
-	if err != nil {
-		log.Fatal(err)
-	}
+	var calls []multicall.Multicall2Call
+	generate_calls(edges, &calls)
 
 	for {
 		select {
-		case err := <-sub.Err():
+		case err := <-NETWORK.Subscription.Err():
 			log.Fatal(err)
-		case header := <-headers:
-			block, err := GLOBAL.Client.BlockByHash(context.Background(), header.Hash())
+		case header := <-NETWORK.Headers:
+			block, err := NETWORK.Client.BlockByHash(context.Background(), header.Hash())
 			if err != nil {
 				log.Fatal(err)
 			}
+			start := time.Now()
+
 			fmt.Println("New block #", block.Number().Uint64())
 			constants.PrintDashed()
 
-			find_arbs()
+			edges := edges
+
+			populate_edges(calls, &edges)
+
+			filter_duplicate_edges(&edges)
+
+			var paths [][]Edge
+
+			run_bellman_ford(edges, &paths)
+
+			filter_profitable_paths(&paths)
+
+			// execute_arbs(best_paths)
+
+			end := time.Now()
+			log.Println("Total time elapsed (since block):", end.Sub(start).String())
+			constants.PrintDashed()
 		}
 	}
+}
+
+func start_bot() {
+	setup_global_data()
+
+	find_arbs()
 }
