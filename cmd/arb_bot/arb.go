@@ -5,10 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/addresses/ethereum"
-	"go_defi/addresses/fantom"
-	"go_defi/addresses/polygon"
-	"go_defi/contracts/uniswap/query"
+
+	// "go_defi/addresses/fantom"
+	// "go_defi/addresses/polygon"
+	"go_defi/contracts/curve/crypto-swap"
+	"go_defi/contracts/curve/stable-swap"
+	"go_defi/contracts/multicall"
+	"go_defi/contracts/uniswap/pair"
 	"go_defi/utils/array"
+	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
 	"log"
 	"math/big"
@@ -20,296 +25,205 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-type network_data struct {
-	rpc           string
-	QueryAddress  common.Address
-	Factories     []common.Address
-	Tokens        []common.Address
-	TokenDecimals map[string]*big.Int
-	RevLookup     map[common.Address]string
+type NetworkData struct {
+	Client      *ethclient.Client
+	RPC         string
+	Multicaller common.Address
+	Pools       map[common.Address]constants.Pool
+	Tokens      map[string]constants.Token
+	LookUp      map[common.Address]string
 }
 
 var (
-	network = flag.String("network", "ethereum", "Network")
-	configs = map[string]network_data{
-		"ethereum": {
-			rpc:           ethereum_addresses.RPC_URL,
-			QueryAddress:  ethereum_addresses.UNISWAP_QUERY_ADDR,
-			Factories:     ethereum_addresses.FACTORY_ADDRESSES,
-			Tokens:        ethereum_addresses.TRADABLE_TOKENS,
-			TokenDecimals: ethereum_addresses.TOKEN_DECIMALS,
-			RevLookup:     ethereum_addresses.REVERSE_NAMING,
-		},
-		"polygon": {
-			rpc:           polygon_addresses.RPC_URL,
-			QueryAddress:  polygon_addresses.UNISWAP_QUERY_ADDR,
-			Factories:     polygon_addresses.FACTORY_ADDRESSES,
-			Tokens:        polygon_addresses.TRADABLE_TOKENS,
-			TokenDecimals: polygon_addresses.TOKEN_DECIMALS,
-			RevLookup:     polygon_addresses.REVERSE_NAMING,
-		},
-		"fantom": {
-			rpc:           fantom_addresses.RPC_URL,
-			QueryAddress:  fantom_addresses.UNISWAP_QUERY_ADDR,
-			Factories:     fantom_addresses.FACTORY_ADDRESSES,
-			Tokens:        fantom_addresses.TRADABLE_TOKENS,
-			TokenDecimals: fantom_addresses.TOKEN_DECIMALS,
-			RevLookup:     fantom_addresses.REVERSE_NAMING,
-		},
+	selected_network = flag.String("network", "ethereum", "Network")
+	global           NetworkData
+)
+
+func setup_network_data() {
+	fmt.Println("Selected Network:", *selected_network)
+	switch *selected_network {
+	case "ethereum":
+		global = NetworkData{
+			RPC:         ethereum_addresses.RPC_URL,
+			Multicaller: ethereum_addresses.MULTICALL_ADDR,
+			Pools:       ethereum_addresses.ALL_POOLS,
+			Tokens:      ethereum_addresses.TOKENS,
+			LookUp:      ethereum_addresses.LOOKUP,
+		}
+	case "polygon":
+
+	case "fantom":
+
 	}
-	config network_data
-)
 
-type pair_data struct {
-	Tokens   tokens
-	Reserves reserves_data
-	Prices   prices_data
-	Weights  weights_data
+	client, err := ethclient.Dial(global.RPC)
+	if err != nil {
+		log.Fatal(err)
+	}
+	global.Client = client
 }
 
-type tokens struct {
-	Token0 common.Address
-	Token1 common.Address
+type Edge struct {
+	Source constants.Token
+	Dest   constants.Token
+	Price  *big.Float
+	Weight *big.Float
+	Pool   common.Address
 }
 
-type reserves_data struct {
-	Reserve0      *big.Int
-	Reserve0_Norm *big.Float
-	Reserve1      *big.Int
-	Reserve1_Norm *big.Float
-}
-
-type prices_data struct {
-	Price0 *big.Float
-	Price1 *big.Float
-}
-
-type weights_data struct {
-	Weight0 *big.Float
-	Weight1 *big.Float
-}
-
-type edge_data struct {
-	Source        common.Address
-	Dest          common.Address
-	Pair          common.Address
-	Weight        *big.Float
-	Price         *big.Float
-	ReserveSource *big.Float
-	ReserveDest   *big.Float
-}
-
-var (
-	zero_addr = common.HexToAddress("0x0000000000000000000000000000000000000000")
-	inf       = new(big.Float).SetInf(false)
-	neg_inf   = new(big.Float).SetInf(true)
-	one       = new(big.Float).SetFloat64(1)
-	neg_one   = new(big.Float).SetFloat64(-1)
-	zero      = new(big.Float).SetFloat64(0)
-)
-
-func generate_all_pairs() [][]common.Address {
-	config := config
-	var pairs [][]common.Address
-	for i := 0; i < len(config.Tokens); i++ {
-		for j := 0; j < len(config.Tokens); j++ {
-			if i < j {
-				if config.Tokens[i].Hash().Big().Cmp(config.Tokens[j].Hash().Big()) == -1 {
-					pairs = append(pairs, []common.Address{config.Tokens[i], config.Tokens[j]})
-				} else {
-					pairs = append(pairs, []common.Address{config.Tokens[j], config.Tokens[i]})
+func generate_edges(edges *[]Edge) {
+	generated_edges := []Edge{}
+	for address, pool := range global.Pools {
+		var pairs [][]constants.Token
+		tokens := pool.Tokens
+		for i := 0; i < len(tokens); i++ {
+			for j := 0; j < len(tokens); j++ {
+				if i < j {
+					pairs = append(pairs, []constants.Token{tokens[i], tokens[j]})
+					pairs = append(pairs, []constants.Token{tokens[j], tokens[i]})
 				}
 			}
 		}
-	}
-	return pairs
-}
-
-func fetch_pair_addrs(query_contract *query.UniswapQuery, pairs [][]common.Address) [][]common.Address {
-	start := time.Now()
-
-	var queries = []query.PairQuery{}
-	for _, factory := range config.Factories {
 		for _, pair := range pairs {
-			queries = append(queries, query.PairQuery{Factory: factory, TokenA: pair[0], TokenB: pair[1]})
+			new_edge := Edge{
+				Source: pair[0],
+				Dest:   pair[1],
+				Pool:   address,
+			}
+			generated_edges = append(generated_edges, new_edge)
 		}
 	}
-	raw_pair_addrs, err := query_contract.GetPairs(nil, queries)
-	if err != nil {
-		log.Fatal(err)
-	}
-	var pair_addrs [][]common.Address
-	for i, pair_addr := range raw_pair_addrs {
-		if pair_addr != zero_addr {
-			pair_addrs = append(pair_addrs, []common.Address{pair_addr, queries[i].TokenA, queries[i].TokenB})
+	*edges = generated_edges
+}
+
+func populate_edges(edges *[]Edge) {
+	start := time.Now()
+	var calls []multicall.Multicall2Call
+	for _, edge := range *edges {
+		switch impl := global.Pools[edge.Pool].Implementation; impl {
+		case "UniswapV2":
+			encoded_args := crypto.EncodeArgs(pair.UniswapPairMetaData.ABI, "getReserves")
+			calls = append(calls, multicall.Multicall2Call{
+				Target:   edge.Pool,
+				CallData: encoded_args,
+			})
+		case "CurveStableSwap":
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, global.Pools[edge.Pool].Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, global.Pools[edge.Pool].Tokens)))
+			encoded_args := crypto.EncodeArgs(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", i, j, edge.Source.Size)
+			calls = append(calls, multicall.Multicall2Call{
+				Target:   edge.Pool,
+				CallData: encoded_args,
+			})
+		case "CurveCryptoSwap":
+			i := big.NewInt(int64(array.TokenIndexOf(edge.Source, global.Pools[edge.Pool].Tokens)))
+			j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, global.Pools[edge.Pool].Tokens)))
+			encoded_args := crypto.EncodeArgs(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", i, j, edge.Source.Size)
+			calls = append(calls, multicall.Multicall2Call{
+				Target:   edge.Pool,
+				CallData: encoded_args,
+			})
 		}
 	}
+	encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
+	encoded_output := crypto.StaticCall(global.Client, global.Multicaller, encoded_calls)
+	decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
+
+	populated_edges := []Edge{}
+	for i, edge := range *edges {
+		call := decoded_output[i]
+		source_prec := edge.Source.Precision
+		dest_prec := edge.Dest.Precision
+		var price *big.Float
+		switch impl := global.Pools[edge.Pool].Implementation; impl {
+		case "UniswapV2":
+			decoded_data := crypto.DecodeData(pair.UniswapPairMetaData.ABI, "getReserves", call)
+			reserve_0 := new(big.Float).SetInt(decoded_data[0].(*big.Int))
+			reserve_1 := new(big.Float).SetInt(decoded_data[1].(*big.Int))
+			var source_reserve, dest_reserve *big.Float
+			if global.Pools[edge.Pool].Tokens[0] == edge.Source {
+				source_reserve = reserve_0
+				dest_reserve = reserve_1
+			} else {
+				source_reserve = reserve_1
+				dest_reserve = reserve_0
+			}
+			source_reserve_fmt := new(big.Float).Quo(source_reserve, new(big.Float).SetInt(source_prec))
+			dest_reserve_fmt := new(big.Float).Quo(dest_reserve, new(big.Float).SetInt(dest_prec))
+			price = new(big.Float).Quo(dest_reserve_fmt, source_reserve_fmt)
+		case "CurveStableSwap":
+			decoded_data := crypto.DecodeData(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", call)
+			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
+			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
+			amount_in := new(big.Float).SetInt(edge.Source.Size)
+			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
+			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+		case "CurveCryptoSwap":
+			decoded_data := crypto.DecodeData(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", call)
+			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
+			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
+			amount_in := new(big.Float).SetInt(edge.Source.Size)
+			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
+			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+		}
+		edge.Price = price
+		lg := bigfloat.Log(price)
+		weight := lg.Mul(lg, constants.NegOne)
+		edge.Weight = weight
+		populated_edges = append(populated_edges, edge)
+	}
+	*edges = populated_edges
 
 	end := time.Now()
-	log.Println("Fetched", len(pair_addrs), "pairs in", end.Sub(start).String())
-	return pair_addrs
+	log.Println("Fetched and populated", len(calls), "edge weights in", end.Sub(start).String())
 }
 
-func fetch_reserves(query_contract *query.UniswapQuery, pair_addrs []common.Address) [][2]*big.Int {
+func filter_duplicate_edges(edges *[]Edge) {
 	start := time.Now()
-	reserves, err := query_contract.GetReservesByPairs(nil, pair_addrs)
-	if err != nil {
-		log.Fatal(err)
+	var seen_edges []Edge
+	for _, edge := range *edges {
+		seen := false
+		for i, seen_edge := range seen_edges {
+			if seen_edge.Source == edge.Source && seen_edge.Dest == edge.Dest {
+				seen = true
+				if edge.Weight.Cmp(seen_edge.Weight) == -1 {
+					seen_edges[i] = edge
+				}
+				break
+			}
+		}
+		if !seen {
+			seen_edges = append(seen_edges, edge)
+		}
 	}
+	*edges = seen_edges
 
 	end := time.Now()
-	log.Println("Fetched", len(reserves), "reserves in", end.Sub(start).String())
-	return reserves
+	log.Println("Filtered through", len(*edges), "edges in", end.Sub(start).String())
 }
 
-func get_spot_price(reserve_a *big.Float, reserve_b *big.Float) *big.Float {
-	return new(big.Float).Quo(reserve_a, reserve_b)
-}
-
-func get_weighted_price(price *big.Float) *big.Float {
-	lg := bigfloat.Log(price)
-	return lg.Mul(lg, neg_one)
-}
-
-func get_weighted_prices(prices [][]*big.Float) [][]*big.Float {
-	var weighted_prices [][]*big.Float
-	for _, price := range prices {
-		weighted_price_0 := get_weighted_price(price[0])
-		weighted_price_1 := get_weighted_price(price[1])
-		weighted_prices = append(weighted_prices, []*big.Float{weighted_price_0, weighted_price_1})
-	}
-	return weighted_prices
-}
-
-func get_amount_out(reserve_in *big.Float, reserve_out *big.Float, amount_in *big.Float) *big.Float {
-	amount_in_w_fee := new(big.Float).Mul(amount_in, big.NewFloat(997))
-	numerator := new(big.Float).Mul(amount_in_w_fee, reserve_out)
-	denominator := new(big.Float).Mul(reserve_in, big.NewFloat(1000))
-	denominator = new(big.Float).Add(denominator, amount_in_w_fee)
-	return new(big.Float).Quo(numerator, denominator)
-}
-
-func compile_data(pair_addrs [][]common.Address, reserves [][2]*big.Int) map[common.Address]pair_data {
-	var all_data = make(map[common.Address]pair_data)
-	for i, pair_addr := range pair_addrs {
-		token_0_decimals := config.TokenDecimals[config.RevLookup[pair_addr[1]]]
-		token_0_decimal_pow := bigfloat.Pow(big.NewFloat(10), new(big.Float).SetInt(token_0_decimals))
-		token_1_decimals := config.TokenDecimals[config.RevLookup[pair_addr[2]]]
-		token_1_decimal_pow := bigfloat.Pow(big.NewFloat(10), new(big.Float).SetInt(token_1_decimals))
-
-		reserve_0_norm := new(big.Float).Quo(new(big.Float).SetInt(reserves[i][0]), token_0_decimal_pow)
-		reserve_1_norm := new(big.Float).Quo(new(big.Float).SetInt(reserves[i][1]), token_1_decimal_pow)
-		spot_price_0 := get_spot_price(reserve_0_norm, reserve_1_norm)
-		spot_price_1 := get_spot_price(reserve_1_norm, reserve_0_norm)
-		weighted_price_0 := get_weighted_price(spot_price_0)
-		weighted_price_1 := get_weighted_price(spot_price_1)
-
-		all_data[pair_addr[0]] = pair_data{
-			Tokens: tokens{
-				Token0: pair_addr[1],
-				Token1: pair_addr[2],
-			},
-			Reserves: reserves_data{
-				Reserve0:      reserves[i][0],
-				Reserve0_Norm: reserve_0_norm,
-				Reserve1:      reserves[i][1],
-				Reserve1_Norm: reserve_1_norm,
-			},
-			Prices: prices_data{
-				Price0: spot_price_0,
-				Price1: spot_price_1,
-			},
-			Weights: weights_data{
-				Weight0: weighted_price_0,
-				Weight1: weighted_price_1,
-			},
-		}
-	}
-	return all_data
-}
-
-func generate_nodes() map[common.Address]int {
-	var nodes = make(map[common.Address]int)
-	for i, token := range config.Tokens {
-		nodes[token] = i
-	}
-	return nodes
-}
-
-func generate_edges(all_data map[common.Address]pair_data) []edge_data {
-	var edges []edge_data
-	for k, v := range all_data {
-		tmp_edge := edge_data{
-			Source:        v.Tokens.Token0,
-			Dest:          v.Tokens.Token1,
-			Pair:          k,
-			Weight:        v.Weights.Weight0,
-			Price:         v.Prices.Price0,
-			ReserveSource: v.Reserves.Reserve0_Norm,
-			ReserveDest:   v.Reserves.Reserve1_Norm,
-		}
-
-		idx := -1
-		for i, edge := range edges {
-			if edge.Source == tmp_edge.Source && edge.Dest == tmp_edge.Dest {
-				idx = i
-			}
-		}
-		if idx >= 0 {
-			dup_edge := edges[idx]
-			if tmp_edge.Weight.Cmp(dup_edge.Weight) == -1 {
-				edges[idx] = tmp_edge
-			}
-		} else {
-			edges = append(edges, tmp_edge)
-		}
-
-		idx = -1
-		tmp_edge = edge_data{
-			Source:        v.Tokens.Token1,
-			Dest:          v.Tokens.Token0,
-			Pair:          k,
-			Weight:        v.Weights.Weight1,
-			Price:         v.Prices.Price1,
-			ReserveSource: v.Reserves.Reserve1_Norm,
-			ReserveDest:   v.Reserves.Reserve0_Norm,
-		}
-
-		for i, edge := range edges {
-			if edge.Source == tmp_edge.Source && edge.Dest == tmp_edge.Dest {
-				idx = i
-			}
-		}
-		if idx >= 0 {
-			dup_edge := edges[idx]
-			if tmp_edge.Weight.Cmp(dup_edge.Weight) == -1 {
-				edges[idx] = tmp_edge
-			}
-		} else {
-			edges = append(edges, tmp_edge)
-		}
-	}
-	return edges
-}
-
-func run_bellman_ford(nodes map[common.Address]int, edges []edge_data) [][]edge_data {
+func run_bellman_ford(edges []Edge) [][]Edge {
 	start := time.Now()
+
+	var nodes []constants.Token
+	for _, token := range global.Tokens {
+		nodes = append(nodes, token)
+	}
 
 	n := len(nodes)
-	distance := make([]*big.Float, n)
-	predecessor := make([]int, n)
+	distance := make(map[constants.Token]*big.Float)
+	predecessor := make(map[constants.Token]constants.Token)
 
-	for i := range distance {
-		distance[i] = inf
-		predecessor[i] = -1
+	for _, node := range nodes {
+		distance[node] = constants.Inf
 	}
-	source := 0
-	distance[source] = zero
+	source := nodes[0]
+	distance[source] = constants.Zero
 
 	for i := 0; i < n-1; i++ {
 		for _, edge := range edges {
-			source := nodes[edge.Source]
-			dest := nodes[edge.Dest]
+			source := edge.Source
+			dest := edge.Dest
 			lhs := new(big.Float).Add(distance[source], edge.Weight)
 			rhs := distance[dest]
 			if lhs.Cmp(rhs) == -1 {
@@ -319,161 +233,151 @@ func run_bellman_ford(nodes map[common.Address]int, edges []edge_data) [][]edge_
 		}
 	}
 
-	var edge_paths [][]edge_data
+	var edge_paths [][]Edge
 	for _, edge := range edges {
-		source := nodes[edge.Source]
-		dest := nodes[edge.Dest]
+		source := edge.Source
+		dest := edge.Dest
 		lhs := new(big.Float).Add(distance[source], edge.Weight)
 		rhs := distance[dest]
 		if lhs.Cmp(rhs) == -1 {
-			node_path := []int{dest, source}
-			for array.IndexOf(predecessor[source], node_path) == -1 {
+			node_path := []constants.Token{dest, source}
+
+			for array.TokenIndexOf(predecessor[source], node_path) == -1 {
 				node_path = append(node_path, predecessor[source])
 				source = predecessor[source]
 			}
 			node_path = append(node_path, predecessor[source])
 
-			// reverse array
 			for i, j := 0, len(node_path)-1; i < j; i, j = i+1, j-1 {
 				node_path[i], node_path[j] = node_path[j], node_path[i]
 			}
 
 			if node_path[0] != node_path[len(node_path)-1] {
-				// only add paths that start and end on same asset
 				continue
 			}
 
-			var path string
-			for i, step := range node_path {
-				path += config.RevLookup[config.Tokens[step]]
-				if i < len(node_path)-1 {
-					path += " -> "
-				}
-			}
-			fmt.Println(path + "\n")
-
-			var edge_path []edge_data
+			var edge_path []Edge
 			for i := 0; i < len(node_path)-1; i++ {
-				source := config.Tokens[node_path[i]]
-				dest := config.Tokens[node_path[i+1]]
+				source := node_path[i]
+				dest := node_path[i+1]
 				for _, edge := range edges {
 					if edge.Source == source && edge.Dest == dest {
 						edge_path = append(edge_path, edge)
 					}
 				}
 			}
+
+			theoretical_profitability := big.NewFloat(1.0)
+			for _, path := range edge_path {
+				pool := global.Pools[path.Pool]
+				theoretical_profitability = new(big.Float).Mul(theoretical_profitability, path.Price)
+				fmt.Println(
+					global.LookUp[path.Source.Address], "=>",
+					global.LookUp[path.Dest.Address],
+					"(", pool.Protocol, ":", pool.Name, ")",
+				)
+			}
+			theoretical_profitability = new(big.Float).Sub(theoretical_profitability, big.NewFloat(1))
+			theoretical_profitability = new(big.Float).Mul(theoretical_profitability, big.NewFloat(100))
+			fmt.Println("Theoretical profitability:", theoretical_profitability, "%")
+			fmt.Println("--------------------------")
+
 			edge_paths = append(edge_paths, edge_path)
 		}
 	}
+
 	end := time.Now()
 	log.Println("Found", len(edge_paths), "negative cycles in", end.Sub(start).String())
+
 	return edge_paths
 }
 
-func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
+// func find_best_paths(edge_paths [][]edge_data) [][]edge_data {
+// 	start := time.Now()
+
+// 	var best_paths [][]edge_data
+// 	for _, edge_path := range edge_paths {
+// 		swap_sizes := []*big.Float{
+// 			big.NewFloat(0.00001),
+// 			big.NewFloat(0.0001),
+// 			big.NewFloat(0.001),
+// 			big.NewFloat(0.01),
+// 			big.NewFloat(0.1),
+// 			big.NewFloat(1),
+// 			big.NewFloat(10),
+// 			big.NewFloat(100),
+// 			big.NewFloat(1000),
+// 		}
+// 		for _, swap_amount := range swap_sizes {
+// 			start_amount := swap_amount
+// 			fmt.Println("Simulating swap (", start_amount, config.RevLookup[edge_path[0].Source], ")")
+// 			for _, edge := range edge_path {
+// 				amount_out := get_amount_out(edge.ReserveSource, edge.ReserveDest, swap_amount)
+// 				fmt.Println(swap_amount, config.RevLookup[edge.Source], "->", amount_out, config.RevLookup[edge.Dest])
+// 				swap_amount = amount_out
+// 			}
+// 			net := new(big.Float).Sub(swap_amount, start_amount)
+// 			if net.Cmp(zero) == 1 {
+// 				best_paths = append(best_paths, edge_path)
+// 				fmt.Println("^ PROFITABLE TRADE ^")
+// 			}
+// 			fmt.Println()
+// 		}
+// 	}
+
+// 	end := time.Now()
+// 	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
+// 	return best_paths
+// }
+
+func execute_arbs(best_paths [][]Edge) {}
+
+func find_arbs() {
 	start := time.Now()
 
-	var best_paths [][]edge_data
-	for _, edge_path := range edge_paths {
-		swap_sizes := []*big.Float{
-			big.NewFloat(0.00001),
-			big.NewFloat(0.0001),
-			big.NewFloat(0.001),
-			big.NewFloat(0.01),
-			big.NewFloat(0.1),
-			big.NewFloat(1),
-			big.NewFloat(10),
-			big.NewFloat(100),
-			big.NewFloat(1000),
-		}
-		for _, swap_amount := range swap_sizes {
-			start_amount := swap_amount
-			fmt.Println("Simulating swap (", start_amount, config.RevLookup[edge_path[0].Source], ")")
-			for _, edge := range edge_path {
-				amount_out := get_amount_out(edge.ReserveSource, edge.ReserveDest, swap_amount)
-				fmt.Println(swap_amount, config.RevLookup[edge.Source], "->", amount_out, config.RevLookup[edge.Dest])
-				swap_amount = amount_out
-			}
-			net := new(big.Float).Sub(swap_amount, start_amount)
-			if net.Cmp(zero) == 1 {
-				best_paths = append(best_paths, edge_path)
-				fmt.Println("^ PROFITABLE TRADE ^")
-			}
-			fmt.Println()
-		}
-	}
+	var edges []Edge
 
-	end := time.Now()
-	log.Println("Found", len(best_paths), "profitable paths in", end.Sub(start).String())
-	return best_paths
-}
+	generate_edges(&edges)
 
-func execute_arbs(best_paths [][]edge_data) {}
+	populate_edges(&edges)
 
-func find_arbs(query_contract *query.UniswapQuery, raw_pair_addrs [][]common.Address) {
-	start := time.Now()
+	filter_duplicate_edges(&edges)
 
-	var pair_addrs []common.Address
-	for _, pair_addr := range raw_pair_addrs {
-		pair_addrs = append(pair_addrs, pair_addr[0])
-	}
+	paths := run_bellman_ford(edges)
+	_ = paths
 
-	reserves := fetch_reserves(query_contract, pair_addrs)
+	// best_paths := find_best_paths(edge_paths)
 
-	all_data := compile_data(raw_pair_addrs, reserves)
-
-	edges := generate_edges(all_data)
-
-	nodes := generate_nodes()
-
-	edge_paths := run_bellman_ford(nodes, edges)
-
-	best_paths := find_best_paths(edge_paths)
-
-	execute_arbs(best_paths)
+	// execute_arbs(best_paths)
 
 	end := time.Now()
 	log.Println("Completed search in", end.Sub(start).String()+"\n")
 }
 
 func start_bot() {
-	fmt.Println("Running arb_bot (", *network, ")")
+	fmt.Println("Running arb_bot")
 	fmt.Println("Account:", crypto.GetPublicAddress())
 
-	config = configs[*network]
-
-	client, err := ethclient.Dial(config.rpc)
-	if err != nil {
-		log.Fatal(err)
-	}
+	setup_network_data()
 
 	headers := make(chan *types.Header)
-	sub, err := client.SubscribeNewHead(context.Background(), headers)
+	sub, err := global.Client.SubscribeNewHead(context.Background(), headers)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	query_contract, err := query.NewUniswapQuery(config.QueryAddress, client)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	pairs := generate_all_pairs()
-
-	raw_pair_addrs := fetch_pair_addrs(query_contract, pairs)
 
 	for {
 		select {
 		case err := <-sub.Err():
 			log.Fatal(err)
 		case header := <-headers:
-			block, err := client.BlockByHash(context.Background(), header.Hash())
+			block, err := global.Client.BlockByHash(context.Background(), header.Hash())
 			if err != nil {
 				log.Fatal(err)
 			}
 			log.Println("New block #", block.Number().Uint64())
 
-			find_arbs(query_contract, raw_pair_addrs)
+			find_arbs()
 		}
 	}
 }

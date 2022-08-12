@@ -66,6 +66,7 @@ func GetGasPrice(client *ethclient.Client) *big.Int {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	return gasPrice
 }
 
@@ -74,6 +75,7 @@ func GetChainID(client *ethclient.Client) *big.Int {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	return chainID
 }
 
@@ -101,10 +103,29 @@ func EncodeArgs(abi_str string, name string, args ...interface{}) []byte {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	encodedArgs, err := abi_interface.Pack(
 		name, args...,
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return encodedArgs
+}
+
+func DecodeData(abi_str string, name string, data []byte) []interface{} {
+	abi_interface, err := abi.JSON(strings.NewReader(abi_str))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	output, err := abi_interface.Unpack(name, data)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return output
 }
 
 func GetOpts(client *ethclient.Client) *bind.TransactOpts {
@@ -114,9 +135,11 @@ func GetOpts(client *ethclient.Client) *bind.TransactOpts {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	opts.Nonce = big.NewInt(int64(GetNonce(client)))
 	opts.Value = big.NewInt(0)
 	opts.GasPrice = GetGasPrice(client)
+
 	return opts
 }
 
@@ -127,6 +150,7 @@ func GenerateTransaction(client *ethclient.Client, to common.Address, value *big
 		gasPrice = GetGasPrice(client)
 	}
 	tx := types.NewTransaction(nonce, to, value, gasLimit, gasPrice, data)
+
 	return tx
 }
 
@@ -137,6 +161,7 @@ func SignTransaction(client *ethclient.Client, tx *types.Transaction) *types.Tra
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	return signedTx
 }
 
@@ -145,5 +170,18 @@ func SendTransaction(client *ethclient.Client, signedTx *types.Transaction) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	fmt.Printf("tx sent: %s", signedTx.Hash().Hex())
+}
+
+func StaticCall(client *ethclient.Client, to common.Address, data []byte) []byte {
+	result, err := client.PendingCallContract(context.TODO(), ethereum.CallMsg{
+		To:   &to,
+		Data: data,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return result
 }

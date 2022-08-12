@@ -7,7 +7,6 @@ import (
 	"go_defi/addresses/ethereum"
 	"go_defi/addresses/fantom"
 	"go_defi/addresses/polygon"
-	"go_defi/contracts/test/test"
 	"go_defi/utils/crypto"
 	"log"
 
@@ -89,10 +88,10 @@ func process_pending_tx(client *ethclient.Client, raw_tx *types.Transaction) {
 }
 
 func front_run(client *ethclient.Client, tx transaction) {
-	_, err := dummycontract.NewDummy(fantom_addresses.DUMMY_ADDR, client)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// _, err := dummycontract.NewDummy(fantom_addresses.DUMMY_ADDR, client)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 	// function_data := crypto.GetFunctionData("test()")
 
 	// opts := crypto.GetOpts(client)
