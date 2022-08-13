@@ -1,9 +1,7 @@
 package constants
 
 import (
-	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,6 +18,7 @@ type NetworkData struct {
 
 type Token struct {
 	Address   common.Address
+	Decimals  int64
 	Precision *big.Int
 	Size      *big.Int
 }
@@ -30,6 +29,7 @@ type Pool struct {
 	Fee            *big.Float
 	Protocol       string
 	Implementation string
+	SwapType       uint8
 }
 
 var (
@@ -43,8 +43,12 @@ var (
 	PointThreePercent    = big.NewFloat(0.003)
 	PointZeroFivePercent = big.NewFloat(0.0005)
 	PointZeroOnePercent  = big.NewFloat(0.0001)
+	SwapTypes            = map[string]uint8{
+		"UniswapV2":             0,
+		"UniswapV3":             1,
+		"CurveStableBase":       2,
+		"CurveStableUnderlying": 3,
+		"CurveCryptoBase":       4,
+		"CurveCryptoUnderlying": 5,
+	}
 )
-
-func PrintDashed() {
-	fmt.Println(strings.Repeat("-", 75))
-}

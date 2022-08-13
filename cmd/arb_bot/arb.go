@@ -5,9 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/addresses/ethereum"
+	"go_defi/utils"
 
 	// "go_defi/addresses/fantom"
 	"go_defi/addresses/polygon"
+	"go_defi/contracts/bundler"
 	"go_defi/contracts/curve/crypto-swap"
 	"go_defi/contracts/curve/stable-swap"
 	"go_defi/contracts/multicall"
@@ -16,6 +18,7 @@ import (
 	"go_defi/utils/array"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
+	"go_defi/utils/decimal"
 	"log"
 	"math/big"
 	"time"
@@ -29,6 +32,7 @@ import (
 type GlobalData struct {
 	Multicaller common.Address
 	V3Quoter    common.Address
+	Bundler     common.Address
 	Pools       map[common.Address]constants.Pool
 	Tokens      map[string]constants.Token
 	LookUp      map[common.Address]string
@@ -41,10 +45,7 @@ var (
 )
 
 func setup_global_data() {
-	constants.PrintDashed()
-	log.Println("Running arb_bot")
-	fmt.Println("Account:", crypto.GetPublicAddress())
-
+	fmt.Println("Selected network:", *SELECTED_NETWORK)
 	switch *SELECTED_NETWORK {
 	case "ethereum":
 		NETWORK = constants.NetworkData{
@@ -64,6 +65,7 @@ func setup_global_data() {
 		GLOBAL = GlobalData{
 			Multicaller: polygon_addresses.MULTICALL_ADDR,
 			V3Quoter:    polygon_addresses.UNISWAP_V3_QUOTER_ADDR,
+			Bundler:     polygon_addresses.BUNDLER_ADDR,
 			Pools:       polygon_addresses.ALL_POOLS,
 			Tokens:      polygon_addresses.TOKENS,
 			LookUp:      polygon_addresses.LOOKUP,
@@ -87,8 +89,8 @@ func setup_global_data() {
 	NETWORK.Headers = headers
 	NETWORK.Subscription = sub
 
-	fmt.Println("Network:", *SELECTED_NETWORK)
-	constants.PrintDashed()
+	log.Println("Connected to RPC node")
+	utils.PrintDashed()
 }
 
 type Edge struct {
@@ -129,7 +131,7 @@ func generate_edges(edges *[]Edge) {
 
 	end := time.Now()
 	log.Println("Generated", len(*edges), "edges in", end.Sub(start).String())
-	constants.PrintDashed()
+	utils.PrintDashed()
 }
 
 func generate_calls(edges []Edge, calls *[]multicall.Multicall2Call) {
@@ -184,16 +186,14 @@ func generate_calls(edges []Edge, calls *[]multicall.Multicall2Call) {
 
 	end := time.Now()
 	log.Println("Generated", len(*calls), "network calls in", end.Sub(start).String())
-	constants.PrintDashed()
+	utils.PrintDashed()
 }
 
 func populate_edges(calls []multicall.Multicall2Call, edges *[]Edge) {
 	start := time.Now()
-
 	encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
 	encoded_output := crypto.StaticCall(NETWORK.Client, GLOBAL.Multicaller, encoded_calls)
 	decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
-
 	populated_edges := []Edge{}
 	for i, edge := range *edges {
 		call := decoded_output[i]
@@ -248,7 +248,7 @@ func populate_edges(calls []multicall.Multicall2Call, edges *[]Edge) {
 
 	end := time.Now()
 	log.Println("Fetched and populated", len(*edges), "edge weights in", end.Sub(start).String())
-	constants.PrintDashed()
+	utils.PrintDashed()
 }
 
 func filter_duplicate_edges(edges *[]Edge) {
@@ -273,8 +273,8 @@ func filter_duplicate_edges(edges *[]Edge) {
 	*edges = seen_edges
 
 	end := time.Now()
-	log.Println("Filtered to", len(*edges), "unique edges in", end.Sub(start).String())
-	constants.PrintDashed()
+	log.Println("Filtered and reduced to", len(*edges), "unique edges in", end.Sub(start).String())
+	utils.PrintDashed()
 }
 
 func run_bellman_ford(edges []Edge, paths *[][]Edge) {
@@ -341,62 +341,92 @@ func run_bellman_ford(edges []Edge, paths *[][]Edge) {
 					}
 				}
 			}
-			theoretical_profitability := big.NewFloat(1.0)
-			for _, edge := range edge_path {
-				theoretical_profitability = new(big.Float).Mul(theoretical_profitability, edge.Price)
-				fmt.Println(
-					GLOBAL.LookUp[edge.Source.Address], "=>",
-					GLOBAL.LookUp[edge.Dest.Address],
-					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
-				)
-			}
 			edge_paths = append(edge_paths, edge_path)
-			theoretical_profitability = new(big.Float).Sub(theoretical_profitability, big.NewFloat(1))
-			theoretical_profitability = new(big.Float).Mul(theoretical_profitability, big.NewFloat(100))
-			fmt.Println("Theoretical profitability:", theoretical_profitability, "%")
-			fmt.Println()
+
+			// theoretical_profitability := big.NewFloat(1.0)
+			// for _, edge := range edge_path {
+			// theoretical_profitability = new(big.Float).Mul(theoretical_profitability, edge.Price)
+			// fmt.Println(
+			// 	GLOBAL.LookUp[edge.Source.Address], "=>",
+			// 	GLOBAL.LookUp[edge.Dest.Address],
+			// 	"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
+			// )
+			// }
+			// theoretical_profitability = new(big.Float).Sub(theoretical_profitability, big.NewFloat(1))
+			// theoretical_profitability = new(big.Float).Mul(theoretical_profitability, big.NewFloat(100))
+			// fmt.Println("Theoretical profitability:", theoretical_profitability, "%")
+			// fmt.Println()
 		}
 	}
 	*paths = edge_paths
 
 	end := time.Now()
 	log.Println("Detected", len(*paths), "negative cycles in", end.Sub(start).String())
-	constants.PrintDashed()
+	utils.PrintDashed()
 }
 
 func filter_profitable_paths(paths *[][]Edge) {
 	start := time.Now()
 
-	var best_paths [][]Edge
+	var calls []multicall.Multicall2Call
+	iterations := 5
+
 	for _, edge_path := range *paths {
-		swap_sizes := []*big.Float{
-			big.NewFloat(0.00001),
-			big.NewFloat(0.0001),
-			big.NewFloat(0.001),
-			big.NewFloat(0.01),
-			big.NewFloat(0.1),
-			big.NewFloat(1),
-			big.NewFloat(10),
-			big.NewFloat(100),
-			big.NewFloat(1000),
-		}
-		optimal_size := swap_sizes[0]
-		max_profit := new(big.Float).SetInf(true)
-		for _, swap_amount := range swap_sizes {
-			start_amount := swap_amount
+		start_size := edge_path[0].Source.Size
+		for i := 0; i < iterations; i++ {
+			var swap_calls []bundler.SwapCall
 			for _, edge := range edge_path {
-				amount_out := new(big.Float).Mul(swap_amount, edge.Price)
-				swap_amount = amount_out
+				swap_calls = append(swap_calls, bundler.SwapCall{
+					Target:   edge.Pool,
+					SwapType: edge.PoolData.SwapType,
+					TokenIn:  edge.Source.Address,
+					TokenOut: edge.Dest.Address,
+				})
 			}
-			net := new(big.Float).Sub(swap_amount, start_amount)
-			if net.Cmp(max_profit) == 1 {
-				optimal_size = start_amount
-				max_profit = net
-			}
+			encoded_args := crypto.EncodeArgs(bundler.BundlerMetaData.ABI, "getAmountsOut", swap_calls, start_size)
+			calls = append(calls, multicall.Multicall2Call{
+				Target:   GLOBAL.Bundler,
+				CallData: encoded_args,
+			})
+			start_size = new(big.Int).Mul(start_size, big.NewInt(10))
 		}
-		if max_profit.Cmp(constants.Zero) == 1 {
-			best_paths = append(best_paths, edge_path)
-			fmt.Println("Swap", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
+	}
+
+	encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
+	encoded_output := crypto.StaticCall(NETWORK.Client, GLOBAL.Multicaller, encoded_calls)
+	decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
+
+	var arbs_to_take [][]Edge
+
+	for i, edge_path := range *paths {
+		token_decimals := edge_path[0].Source.Decimals
+		max_profit := decimal.ZeroDec()
+		optimal_size := decimal.ZeroDec()
+		for j := 0; j < iterations; j++ {
+			call := decoded_output[iterations*i+j]
+			decoded_data := crypto.DecodeData(bundler.BundlerMetaData.ABI, "getAmountsOut", call)[0].([]*big.Int)
+			start_amount := decimal.NewDecFromBigIntWithPrec(decoded_data[0], token_decimals)
+			end_amount := decimal.NewDecFromBigIntWithPrec(decoded_data[len(decoded_data)-1], token_decimals)
+			net := end_amount.Sub(start_amount)
+			if net.GT(max_profit) {
+				max_profit = net
+				optimal_size = start_amount
+			}
+			// for k, edge := range edge_path {
+			// 	amount_in := decimal.NewDecFromBigIntWithPrec(decoded_data[k], edge.Source.Decimals)
+			// 	amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[k+1], edge.Dest.Decimals)
+
+			// 	fmt.Println(
+			// 		amount_in,
+			// 		GLOBAL.LookUp[edge.Source.Address], "=>", amount_out,
+			// 		GLOBAL.LookUp[edge.Dest.Address],
+			// 		"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
+			// 	)
+			// }
+			// fmt.Println("Net Profit:", net)
+			// fmt.Println()
+		}
+		if max_profit.GT(decimal.ZeroDec()) {
 			for _, edge := range edge_path {
 				fmt.Println(
 					GLOBAL.LookUp[edge.Source.Address], "=>",
@@ -404,18 +434,19 @@ func filter_profitable_paths(paths *[][]Edge) {
 					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
 				)
 			}
-			fmt.Println("Profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
-			fmt.Println()
+			arbs_to_take = append(arbs_to_take, edge_path)
+			fmt.Println("Optimal trade size:", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
+			fmt.Println("Net profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
 		}
 	}
-	*paths = best_paths
+	*paths = arbs_to_take
 
 	end := time.Now()
-	log.Println("Detected", len(*paths), "profitable arbs in", end.Sub(start).String())
-	constants.PrintDashed()
+	log.Println("Calculated", len(*paths), "profitable arbs in", end.Sub(start).String())
+	utils.PrintDashed()
 }
 
-func execute_arbs(best_paths [][]Edge) {}
+func execute_arbs(paths [][]Edge) {}
 
 func find_arbs() {
 	var edges []Edge
@@ -435,8 +466,8 @@ func find_arbs() {
 			}
 			start := time.Now()
 
-			fmt.Println("New block #", block.Number().Uint64())
-			constants.PrintDashed()
+			log.Println("New block #", block.Number().Uint64())
+			utils.PrintDashed()
 
 			edges := edges
 
@@ -450,16 +481,21 @@ func find_arbs() {
 
 			filter_profitable_paths(&paths)
 
-			// execute_arbs(best_paths)
+			execute_arbs(paths)
 
 			end := time.Now()
 			log.Println("Total time elapsed (since block):", end.Sub(start).String())
-			constants.PrintDashed()
+			utils.PrintDashed()
 		}
 	}
 }
 
 func start_bot() {
+	utils.PrintDashed()
+	log.Println("Running arb_bot")
+	fmt.Println("Account:", crypto.GetPublicAddress())
+	utils.PrintDashed()
+
 	setup_global_data()
 
 	find_arbs()

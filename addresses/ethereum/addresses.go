@@ -145,6 +145,7 @@ var (
 			Name:     "3pool",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"]},
 			Protocol: "Curve",
+			SwapType: constants.SwapTypes["CurveStableBase"],
 		},
 	}
 
@@ -153,6 +154,7 @@ var (
 			Name:     "tricrypto2",
 			Tokens:   []constants.Token{TOKENS["usdt"], TOKENS["wbtc"], TOKENS["weth"]},
 			Protocol: "Curve",
+			SwapType: constants.SwapTypes["CurveCryptoBase"],
 		},
 	}
 
@@ -167,6 +169,7 @@ func init() {
 
 	for k, v := range UNISWAP_V2_LIKE_POOLS {
 		v.Implementation = "UniswapV2"
+		v.SwapType = constants.SwapTypes["UniswapV2"]
 		ALL_POOLS[k] = v
 	}
 
