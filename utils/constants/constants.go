@@ -19,7 +19,6 @@ type NetworkData struct {
 type Token struct {
 	Address   common.Address
 	Decimals  int64
-	Precision *big.Int
 	Size      *big.Int
 }
 

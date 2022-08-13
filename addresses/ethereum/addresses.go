@@ -14,29 +14,29 @@ var (
 
 	TOKENS = map[string]constants.Token{
 		"dai": {
-			Address:   common.HexToAddress("0x6b175474e89094c44da98b954eedeac495271d0f"),
-			Precision: big.NewInt(1e18),
-			Size:      big.NewInt(1e18),
+			Address:  common.HexToAddress("0x6b175474e89094c44da98b954eedeac495271d0f"),
+			Decimals: 18,
+			Size:     big.NewInt(1e18),
 		},
 		"usdc": {
-			Address:   common.HexToAddress("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-			Precision: big.NewInt(1e6),
-			Size:      big.NewInt(1e6),
+			Address:  common.HexToAddress("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+			Decimals: 6,
+			Size:     big.NewInt(1e6),
 		},
 		"usdt": {
-			Address:   common.HexToAddress("0xdac17f958d2ee523a2206206994597c13d831ec7"),
-			Precision: big.NewInt(1e6),
-			Size:      big.NewInt(1e6),
+			Address:  common.HexToAddress("0xdac17f958d2ee523a2206206994597c13d831ec7"),
+			Decimals: 6,
+			Size:     big.NewInt(1e6),
 		},
 		"wbtc": {
-			Address:   common.HexToAddress("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
-			Precision: big.NewInt(1e8),
-			Size:      big.NewInt(0.00005e8),
+			Address:  common.HexToAddress("0x2260fac5e5542a773aa44fbcfedf7c193bc2c599"),
+			Decimals: 8,
+			Size:     big.NewInt(0.00005e8),
 		},
 		"weth": {
-			Address:   common.HexToAddress("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-			Precision: big.NewInt(1e18),
-			Size:      big.NewInt(0.0005e18),
+			Address:  common.HexToAddress("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+			Decimals: 18,
+			Size:     big.NewInt(0.0005e18),
 		},
 	}
 

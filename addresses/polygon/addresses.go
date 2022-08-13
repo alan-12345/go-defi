@@ -17,37 +17,31 @@ var (
 		"dai": {
 			Address:   common.HexToAddress("0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"),
 			Decimals:  18,
-			Precision: big.NewInt(1e18),
 			Size:      big.NewInt(1e18),
 		},
 		"usdc": {
 			Address:   common.HexToAddress("0x2791bca1f2de4661ed88a30c99a7a9449aa84174"),
 			Decimals:  6,
-			Precision: big.NewInt(1e6),
 			Size:      big.NewInt(1e6),
 		},
 		"usdt": {
 			Address:   common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
 			Decimals:  6,
-			Precision: big.NewInt(1e6),
 			Size:      big.NewInt(1e6),
 		},
 		"wbtc": {
 			Address:   common.HexToAddress("0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6"),
 			Decimals:  8,
-			Precision: big.NewInt(1e8),
 			Size:      big.NewInt(0.00005e8),
 		},
 		"weth": {
 			Address:   common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
 			Decimals:  18,
-			Precision: big.NewInt(1e18),
 			Size:      big.NewInt(0.0005e18),
 		},
 		"wmatic": {
 			Address:   common.HexToAddress("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"),
 			Decimals:  18,
-			Precision: big.NewInt(1e18),
 			Size:      big.NewInt(1e18),
 		},
 	}
