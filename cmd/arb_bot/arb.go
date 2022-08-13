@@ -4,14 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"go_defi/addresses/ethereum"
+	ethereum_addresses "go_defi/addresses/ethereum"
 	"go_defi/utils"
 
 	// "go_defi/addresses/fantom"
-	"go_defi/addresses/polygon"
+	polygon_addresses "go_defi/addresses/polygon"
 	"go_defi/contracts/bundler"
-	"go_defi/contracts/curve/crypto-swap"
-	"go_defi/contracts/curve/stable-swap"
+	cryptoswap "go_defi/contracts/curve/crypto-swap"
+	stableswap "go_defi/contracts/curve/stable-swap"
 	"go_defi/contracts/multicall"
 	"go_defi/contracts/uniswap/v2/pair"
 	"go_defi/contracts/uniswap/v3/quoter"
@@ -96,8 +96,8 @@ func setup_global_data() {
 type Edge struct {
 	Source   constants.Token
 	Dest     constants.Token
-	Price    *big.Float
-	Weight   *big.Float
+	Price    decimal.Dec
+	Weight   decimal.Dec
 	Pool     common.Address
 	PoolData constants.Pool
 }
@@ -197,51 +197,44 @@ func populate_edges(calls []multicall.Multicall2Call, edges *[]Edge) {
 	populated_edges := []Edge{}
 	for i, edge := range *edges {
 		call := decoded_output[i]
-		source_prec := edge.Source.Precision
-		dest_prec := edge.Dest.Precision
-		var price *big.Float
+		source_decimals := edge.Source.Decimals
+		dest_decimals := edge.Dest.Decimals
+		var price decimal.Dec
 		switch impl := edge.PoolData.Implementation; impl {
 		case "UniswapV2":
 			decoded_data := crypto.DecodeData(pair.UniswapPairMetaData.ABI, "getReserves", call)
-			reserve_0 := new(big.Float).SetInt(decoded_data[0].(*big.Int))
-			reserve_1 := new(big.Float).SetInt(decoded_data[1].(*big.Int))
-			var source_reserve, dest_reserve *big.Float
+			reserve_0 := decoded_data[0].(*big.Int)
+			reserve_1 := decoded_data[1].(*big.Int)
+			var source_reserve, dest_reserve decimal.Dec
 			if edge.PoolData.Tokens[0] == edge.Source {
-				source_reserve = reserve_0
-				dest_reserve = reserve_1
+				source_reserve = decimal.NewDecFromBigIntWithPrec(reserve_0, source_decimals)
+				dest_reserve = decimal.NewDecFromBigIntWithPrec(reserve_1, dest_decimals)
 			} else {
-				source_reserve = reserve_1
-				dest_reserve = reserve_0
+				source_reserve = decimal.NewDecFromBigIntWithPrec(reserve_1, source_decimals)
+				dest_reserve = decimal.NewDecFromBigIntWithPrec(reserve_0, dest_decimals)
 			}
-			source_reserve_fmt := new(big.Float).Quo(source_reserve, new(big.Float).SetInt(source_prec))
-			dest_reserve_fmt := new(big.Float).Quo(dest_reserve, new(big.Float).SetInt(dest_prec))
-			price = new(big.Float).Quo(dest_reserve_fmt, source_reserve_fmt)
+			price = dest_reserve.Quo(source_reserve)
 		case "CurveStableSwap":
 			decoded_data := crypto.DecodeData(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", call)
-			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
-			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
-			amount_in := new(big.Float).SetInt(edge.Source.Size)
-			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
-			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+			amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[0].(*big.Int), dest_decimals)
+			amount_in := decimal.NewDecFromBigIntWithPrec(edge.Source.Size, source_decimals)
+			price = amount_out.Quo(amount_in)
 		case "CurveCryptoSwap":
-			decoded_data := crypto.DecodeData(cryptoswap.CurveCryptoSwapMetaData.ABI, "get_dy", call)
-			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
-			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
-			amount_in := new(big.Float).SetInt(edge.Source.Size)
-			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
-			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+			decoded_data := crypto.DecodeData(stableswap.CurveStableSwapMetaData.ABI, "get_dy_underlying", call)
+			amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[0].(*big.Int), dest_decimals)
+			amount_in := decimal.NewDecFromBigIntWithPrec(edge.Source.Size, source_decimals)
+			price = amount_out.Quo(amount_in)
 		case "UniswapV3":
 			decoded_data := crypto.DecodeData(quoter.UniswapV3QuoterMetaData.ABI, "quoteExactInputSingle", call)
-			amount_out := new(big.Float).SetInt(decoded_data[0].(*big.Int))
-			amount_out_fmt := new(big.Float).Quo(amount_out, new(big.Float).SetInt(dest_prec))
-			amount_in := new(big.Float).SetInt(edge.Source.Size)
-			amount_in_fmt := new(big.Float).Quo(amount_in, new(big.Float).SetInt(source_prec))
-			price = new(big.Float).Quo(amount_out_fmt, amount_in_fmt)
+			amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[0].(*big.Int), dest_decimals)
+			amount_in := decimal.NewDecFromBigIntWithPrec(edge.Source.Size, source_decimals)
+			price = amount_out.Quo(amount_in)
 		}
 		edge.Price = price
-		lg := bigfloat.Log(price)
+		lg := bigfloat.Log(big.NewFloat(price.MustFloat64()))
 		weight := lg.Mul(lg, constants.NegOne)
-		edge.Weight = weight
+		dec_weight := decimal.MustNewDecFromStr(weight.String())
+		edge.Weight = dec_weight
 		populated_edges = append(populated_edges, edge)
 	}
 	*edges = populated_edges
@@ -260,7 +253,7 @@ func filter_duplicate_edges(edges *[]Edge) {
 		for i, seen_edge := range seen_edges {
 			if seen_edge.Source == edge.Source && seen_edge.Dest == edge.Dest {
 				seen = true
-				if edge.Weight.Cmp(seen_edge.Weight) == -1 {
+				if edge.Weight.LT(seen_edge.Weight) {
 					seen_edges[i] = edge
 				}
 				break
@@ -286,22 +279,22 @@ func run_bellman_ford(edges []Edge, paths *[][]Edge) {
 	}
 
 	n := len(nodes)
-	distance := make(map[constants.Token]*big.Float)
+	distance := make(map[constants.Token]decimal.Dec)
 	predecessor := make(map[constants.Token]constants.Token)
 
 	for _, node := range nodes {
-		distance[node] = constants.Inf
+		distance[node] = decimal.NewDecFromBigInt(constants.ReallyBigInt)
 	}
 	source := nodes[0]
-	distance[source] = constants.Zero
+	distance[source] = decimal.ZeroDec()
 
 	for i := 0; i < n-1; i++ {
 		for _, edge := range edges {
 			source := edge.Source
 			dest := edge.Dest
-			lhs := new(big.Float).Add(distance[source], edge.Weight)
+			lhs := distance[source].Add(edge.Weight)
 			rhs := distance[dest]
-			if lhs.Cmp(rhs) == -1 {
+			if lhs.LT(rhs) {
 				distance[dest] = lhs
 				predecessor[dest] = source
 			}
@@ -312,9 +305,9 @@ func run_bellman_ford(edges []Edge, paths *[][]Edge) {
 	for _, edge := range edges {
 		source := edge.Source
 		dest := edge.Dest
-		lhs := new(big.Float).Add(distance[source], edge.Weight)
+		lhs := distance[source].Add(edge.Weight)
 		rhs := distance[dest]
-		if lhs.Cmp(rhs) == -1 {
+		if lhs.LT(rhs) {
 			node_path := []constants.Token{dest, source}
 
 			for array.TokenIndexOf(predecessor[source], node_path) == -1 {
@@ -412,19 +405,19 @@ func filter_profitable_paths(paths *[][]Edge) {
 				max_profit = net
 				optimal_size = start_amount
 			}
-			// for k, edge := range edge_path {
-			// 	amount_in := decimal.NewDecFromBigIntWithPrec(decoded_data[k], edge.Source.Decimals)
-			// 	amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[k+1], edge.Dest.Decimals)
+			for k, edge := range edge_path {
+				amount_in := decimal.NewDecFromBigIntWithPrec(decoded_data[k], edge.Source.Decimals)
+				amount_out := decimal.NewDecFromBigIntWithPrec(decoded_data[k+1], edge.Dest.Decimals)
 
-			// 	fmt.Println(
-			// 		amount_in,
-			// 		GLOBAL.LookUp[edge.Source.Address], "=>", amount_out,
-			// 		GLOBAL.LookUp[edge.Dest.Address],
-			// 		"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
-			// 	)
-			// }
-			// fmt.Println("Net Profit:", net)
-			// fmt.Println()
+				fmt.Println(
+					amount_in,
+					GLOBAL.LookUp[edge.Source.Address], "=>", amount_out,
+					GLOBAL.LookUp[edge.Dest.Address],
+					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
+				)
+			}
+			fmt.Println("Net Profit:", net)
+			fmt.Println()
 		}
 		if max_profit.GT(decimal.ZeroDec()) {
 			for _, edge := range edge_path {
@@ -437,8 +430,11 @@ func filter_profitable_paths(paths *[][]Edge) {
 			arbs_to_take = append(arbs_to_take, edge_path)
 			fmt.Println("Optimal trade size:", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
 			fmt.Println("Net profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
+			fmt.Println()
+			log.Fatal()
 		}
 	}
+
 	*paths = arbs_to_take
 
 	end := time.Now()

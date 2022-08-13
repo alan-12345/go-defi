@@ -51,4 +51,10 @@ var (
 		"CurveCryptoBase":       4,
 		"CurveCryptoUnderlying": 5,
 	}
+	ReallyBigInt = new(big.Int).Sub(BigPow(2, 128), big.NewInt(1))
 )
+
+func BigPow(a, b int64) *big.Int {
+	r := big.NewInt(a)
+	return r.Exp(r, big.NewInt(b), nil)
+}
