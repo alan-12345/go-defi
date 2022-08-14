@@ -304,7 +304,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 	start := time.Now()
 
 	var calls []multicall.Multicall2Call
-	iterations := 5
+	iterations := 7
 
 	for _, edge_path := range *paths {
 		start_size := edge_path[0].Source.Size
