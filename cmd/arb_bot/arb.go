@@ -365,17 +365,20 @@ func filter_profitable_paths(paths *[][]Edge) {
 			// fmt.Println()
 		}
 		if max_profit.GT(decimal.ZeroDec()) {
-			for _, edge := range edge_path {
-				fmt.Println(
-					GLOBAL.LookUp[edge.Source.Address], "=>",
-					GLOBAL.LookUp[edge.Dest.Address],
-					"(", edge.PoolData.Protocol, ":", edge.PoolData.Name, ")",
-				)
-			}
 			arbs_to_take = append(arbs_to_take, edge_path)
-			fmt.Println("Optimal trade size:", optimal_size, GLOBAL.LookUp[edge_path[0].Source.Address])
-			fmt.Println("Net profit:", max_profit, GLOBAL.LookUp[edge_path[0].Source.Address])
-			fmt.Println()
+
+			arb_details := "Network: " + *SELECTED_NETWORK + "\n"
+			for _, edge := range edge_path {
+				arb_details += GLOBAL.LookUp[edge.Source.Address] + " => " +
+					GLOBAL.LookUp[edge.Dest.Address] +
+					" (" + edge.PoolData.Protocol + ": " + edge.PoolData.Name + ")" + "\n"
+			}
+
+			arb_details += "\nOptimal trade size: " + optimal_size.String() + " " + GLOBAL.LookUp[edge_path[0].Source.Address] + "\n"
+			arb_details += "Net profit: " + max_profit.String() + " " + GLOBAL.LookUp[edge_path[0].Source.Address]
+			fmt.Println(arb_details)
+
+			utils.SendTelegramMessage(arb_details)
 		}
 	}
 

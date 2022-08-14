@@ -46,7 +46,9 @@ var (
 		"CurveCryptoUnderlying": 5,
 		"CurveMetaPool":         6,
 	}
-	ReallyBigInt = new(big.Int).Sub(BigPow(2, 128), big.NewInt(1))
+	ReallyBigInt   = new(big.Int).Sub(BigPow(2, 128), big.NewInt(1))
+	TelegramUrl    = "https://api.telegram.org/bot5001621564:AAGP-uUCxGgFlnwDqGuviNqDDLE91VREhao/sendMessage"
+	TelegramChatId = "-1001683355327"
 )
 
 func BigPow(a, b int64) *big.Int {
