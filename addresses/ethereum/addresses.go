@@ -10,7 +10,7 @@ import (
 var (
 	RPC_URL                = "wss://distinguished-holy-market.discover.quiknode.pro/8580eb52f1b8248ac369d3f4509c78016ad4b9e4/"
 	MULTICALL_ADDR         = common.HexToAddress("0x5BA1e12693Dc8F9c48aAD8770482f4739bEeD696")
-	UNISWAP_V3_QUOTER_ADDR = common.HexToAddress("0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6")
+	BUNDLER_ADDR           = common.HexToAddress("0x9528e3AA3CD60030Bb34cB0b0539Ec0c0b6437c8")
 
 	TOKENS = map[string]constants.Token{
 		"dai": {
@@ -38,6 +38,16 @@ var (
 			Decimals: 18,
 			Size:     big.NewInt(0.0005e18),
 		},
+		"susd": {
+			Address:  common.HexToAddress("0x57Ab1ec28D129707052df4dF418D58a2D46d5f51"),
+			Decimals: 18,
+			Size:     big.NewInt(1e18),
+		},
+		"frax": {
+			Address:  common.HexToAddress("0x57Ab1ec28D129707052df4dF418D58a2D46d5f51"),
+			Decimals: 18,
+			Size:     big.NewInt(1e18),
+		},
 	}
 
 	LOOKUP = map[common.Address]string{}
@@ -46,43 +56,36 @@ var (
 		common.HexToAddress("0x5777d92f208679db4b9778590fa3cab3ac9e2168"): {
 			Name:     "dai-usdc (0.01%)",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"]},
-			Fee:      constants.PointZeroOnePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x6c6bc977e13df9b0de53b251522280bb72383700"): {
 			Name:     "dai-usdc (0.05%)",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"): {
 			Name:     "usdc-weth (0.3%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
-			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640"): {
 			Name:     "usdc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x3416cf6c708da44db2624d63ea0aaef7113527c6"): {
 			Name:     "usdc-usdt (0.01%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["usdt"]},
-			Fee:      constants.PointZeroOnePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x4585fe77225b41b697c938b018e2ac67ac5a20c0"): {
 			Name:     "wbtc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["weth"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x11b815efb8f581194ae79006d24e0d814b7697f6"): {
 			Name:     "weth-usdt (0.05%)",
 			Tokens:   []constants.Token{TOKENS["weth"], TOKENS["usdt"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 	}
@@ -140,21 +143,37 @@ var (
 		},
 	}
 
-	CURVE_STABLE_POOLS = map[common.Address]constants.Pool{
+	CURVE_STABLE_BASE_POOLS = map[common.Address]constants.Pool{
 		common.HexToAddress("0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7"): {
 			Name:     "3pool",
 			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"]},
 			Protocol: "Curve",
-			SwapType: constants.SwapTypes["CurveStableBase"],
 		},
 	}
 
-	CURVE_CRYPTO_POOLS = map[common.Address]constants.Pool{
+	CURVE_STABLE_UNDERLYING_POOLS = map[common.Address]constants.Pool{
+		common.HexToAddress("0xA2B47E3D5c44877cca798226B7B8118F9BFb7A56"): {
+			Name:     "compound",
+			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"]},
+			Protocol: "Curve",
+		},
+	}
+
+	CURVE_CRYPTO_BASE_POOLS = map[common.Address]constants.Pool{
 		common.HexToAddress("0xd51a44d3fae010294c616388b506acda1bfaae46"): {
 			Name:     "tricrypto2",
 			Tokens:   []constants.Token{TOKENS["usdt"], TOKENS["wbtc"], TOKENS["weth"]},
 			Protocol: "Curve",
-			SwapType: constants.SwapTypes["CurveCryptoBase"],
+		},
+	}
+
+	CURVE_CRYPTO_UNDERLYING_POOLS = map[common.Address]constants.Pool{}
+
+	CURVE_META_POOLS = map[common.Address]constants.Pool{
+		common.HexToAddress("0xd632f22692fac7611d2aa1c0d552930d43caed3b"): {
+			Name:     "frax",
+			Tokens:   []constants.Token{TOKENS["frax"], TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"]},
+			Protocol: "Curve",
 		},
 	}
 
@@ -162,24 +181,38 @@ var (
 )
 
 func init() {
-	for k, v := range UNISWAP_V3_POOLS {
-		v.Implementation = "UniswapV3"
-		ALL_POOLS[k] = v
-	}
-
 	for k, v := range UNISWAP_V2_LIKE_POOLS {
-		v.Implementation = "UniswapV2"
 		v.SwapType = constants.SwapTypes["UniswapV2"]
 		ALL_POOLS[k] = v
 	}
 
-	for k, v := range CURVE_STABLE_POOLS {
-		v.Implementation = "CurveStableSwap"
+	for k, v := range UNISWAP_V3_POOLS {
+		v.SwapType = constants.SwapTypes["UniswapV3"]
 		ALL_POOLS[k] = v
 	}
 
-	for k, v := range CURVE_CRYPTO_POOLS {
-		v.Implementation = "CurveCryptoSwap"
+	for k, v := range CURVE_STABLE_BASE_POOLS {
+		v.SwapType = constants.SwapTypes["CurveStableBase"]
+		ALL_POOLS[k] = v
+	}
+
+	for k, v := range CURVE_STABLE_UNDERLYING_POOLS {
+		v.SwapType = constants.SwapTypes["CurveStableUnderlying"]
+		ALL_POOLS[k] = v
+	}
+
+	for k, v := range CURVE_CRYPTO_BASE_POOLS {
+		v.SwapType = constants.SwapTypes["CurveCryptoBase"]
+		ALL_POOLS[k] = v
+	}
+
+	for k, v := range CURVE_CRYPTO_UNDERLYING_POOLS {
+		v.SwapType = constants.SwapTypes["CurveCryptoUnderlying"]
+		ALL_POOLS[k] = v
+	}
+
+	for k, v := range CURVE_META_POOLS {
+		v.SwapType = constants.SwapTypes["CurveMetaPool"]
 		ALL_POOLS[k] = v
 	}
 

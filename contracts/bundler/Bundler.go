@@ -30,15 +30,17 @@ var (
 
 // SwapCall is an auto generated low-level Go binding around an user-defined struct.
 type SwapCall struct {
-	Target   common.Address
+	Pool     common.Address
 	SwapType uint8
 	TokenIn  common.Address
 	TokenOut common.Address
+	I        *big.Int
+	J        *big.Int
 }
 
 // BundlerMetaData contains all meta data concerning the Bundler contract.
 var BundlerMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"target\",\"type\":\"address\"},{\"internalType\":\"enumSwapType\",\"name\":\"swapType\",\"type\":\"uint8\"},{\"internalType\":\"address\",\"name\":\"tokenIn\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"tokenOut\",\"type\":\"address\"}],\"internalType\":\"structSwapCall[]\",\"name\":\"calls\",\"type\":\"tuple[]\"},{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"}],\"name\":\"getAmountsOut\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"amountsOut\",\"type\":\"uint256[]\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"coin\",\"type\":\"address\"}],\"name\":\"getCurveIndex\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"coin\",\"type\":\"address\"}],\"name\":\"getCurveIndexUnderlying\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"reserveIn\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"reserveOut\",\"type\":\"uint256\"}],\"name\":\"getUniswapV2AmountOut\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"amountOut\",\"type\":\"uint256\"}],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"UNISWAP_QUOTER\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[],\"name\":\"UNISWAP_QUOTER\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"pool\",\"type\":\"address\"},{\"internalType\":\"enumSwapType\",\"name\":\"swapType\",\"type\":\"uint8\"},{\"internalType\":\"address\",\"name\":\"tokenIn\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"tokenOut\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"i\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"j\",\"type\":\"uint256\"}],\"internalType\":\"structSwapCall[]\",\"name\":\"calls\",\"type\":\"tuple[]\"},{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"}],\"name\":\"getAmountsOut\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"amountsOut\",\"type\":\"uint256[]\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"tokenIn\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"}],\"name\":\"getUniswapV2AmountOut\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"amountOut\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"pool\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"tokenIn\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"tokenOut\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"}],\"name\":\"getUniswapV3AmountOut\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"amountOut\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // BundlerABI is the input ABI used to generate the binding from.
@@ -218,12 +220,12 @@ func (_Bundler *BundlerCallerSession) UNISWAPQUOTER() (common.Address, error) {
 	return _Bundler.Contract.UNISWAPQUOTER(&_Bundler.CallOpts)
 }
 
-// GetCurveIndex is a free data retrieval call binding the contract method 0x13acaf92.
+// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x4db690d0.
 //
-// Solidity: function getCurveIndex(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerCaller) GetCurveIndex(opts *bind.CallOpts, pool common.Address, coin common.Address) (*big.Int, error) {
+// Solidity: function getUniswapV2AmountOut(address pool, address tokenIn, uint256 amountIn) view returns(uint256 amountOut)
+func (_Bundler *BundlerCaller) GetUniswapV2AmountOut(opts *bind.CallOpts, pool common.Address, tokenIn common.Address, amountIn *big.Int) (*big.Int, error) {
 	var out []interface{}
-	err := _Bundler.contract.Call(opts, &out, "getCurveIndex", pool, coin)
+	err := _Bundler.contract.Call(opts, &out, "getUniswapV2AmountOut", pool, tokenIn, amountIn)
 
 	if err != nil {
 		return *new(*big.Int), err
@@ -235,99 +237,58 @@ func (_Bundler *BundlerCaller) GetCurveIndex(opts *bind.CallOpts, pool common.Ad
 
 }
 
-// GetCurveIndex is a free data retrieval call binding the contract method 0x13acaf92.
+// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x4db690d0.
 //
-// Solidity: function getCurveIndex(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerSession) GetCurveIndex(pool common.Address, coin common.Address) (*big.Int, error) {
-	return _Bundler.Contract.GetCurveIndex(&_Bundler.CallOpts, pool, coin)
+// Solidity: function getUniswapV2AmountOut(address pool, address tokenIn, uint256 amountIn) view returns(uint256 amountOut)
+func (_Bundler *BundlerSession) GetUniswapV2AmountOut(pool common.Address, tokenIn common.Address, amountIn *big.Int) (*big.Int, error) {
+	return _Bundler.Contract.GetUniswapV2AmountOut(&_Bundler.CallOpts, pool, tokenIn, amountIn)
 }
 
-// GetCurveIndex is a free data retrieval call binding the contract method 0x13acaf92.
+// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x4db690d0.
 //
-// Solidity: function getCurveIndex(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerCallerSession) GetCurveIndex(pool common.Address, coin common.Address) (*big.Int, error) {
-	return _Bundler.Contract.GetCurveIndex(&_Bundler.CallOpts, pool, coin)
+// Solidity: function getUniswapV2AmountOut(address pool, address tokenIn, uint256 amountIn) view returns(uint256 amountOut)
+func (_Bundler *BundlerCallerSession) GetUniswapV2AmountOut(pool common.Address, tokenIn common.Address, amountIn *big.Int) (*big.Int, error) {
+	return _Bundler.Contract.GetUniswapV2AmountOut(&_Bundler.CallOpts, pool, tokenIn, amountIn)
 }
 
-// GetCurveIndexUnderlying is a free data retrieval call binding the contract method 0x2d8b8aa7.
+// GetAmountsOut is a paid mutator transaction binding the contract method 0xa9eed001.
 //
-// Solidity: function getCurveIndexUnderlying(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerCaller) GetCurveIndexUnderlying(opts *bind.CallOpts, pool common.Address, coin common.Address) (*big.Int, error) {
-	var out []interface{}
-	err := _Bundler.contract.Call(opts, &out, "getCurveIndexUnderlying", pool, coin)
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// GetCurveIndexUnderlying is a free data retrieval call binding the contract method 0x2d8b8aa7.
-//
-// Solidity: function getCurveIndexUnderlying(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerSession) GetCurveIndexUnderlying(pool common.Address, coin common.Address) (*big.Int, error) {
-	return _Bundler.Contract.GetCurveIndexUnderlying(&_Bundler.CallOpts, pool, coin)
-}
-
-// GetCurveIndexUnderlying is a free data retrieval call binding the contract method 0x2d8b8aa7.
-//
-// Solidity: function getCurveIndexUnderlying(address pool, address coin) view returns(uint256)
-func (_Bundler *BundlerCallerSession) GetCurveIndexUnderlying(pool common.Address, coin common.Address) (*big.Int, error) {
-	return _Bundler.Contract.GetCurveIndexUnderlying(&_Bundler.CallOpts, pool, coin)
-}
-
-// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x0aadf612.
-//
-// Solidity: function getUniswapV2AmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) pure returns(uint256 amountOut)
-func (_Bundler *BundlerCaller) GetUniswapV2AmountOut(opts *bind.CallOpts, amountIn *big.Int, reserveIn *big.Int, reserveOut *big.Int) (*big.Int, error) {
-	var out []interface{}
-	err := _Bundler.contract.Call(opts, &out, "getUniswapV2AmountOut", amountIn, reserveIn, reserveOut)
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x0aadf612.
-//
-// Solidity: function getUniswapV2AmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) pure returns(uint256 amountOut)
-func (_Bundler *BundlerSession) GetUniswapV2AmountOut(amountIn *big.Int, reserveIn *big.Int, reserveOut *big.Int) (*big.Int, error) {
-	return _Bundler.Contract.GetUniswapV2AmountOut(&_Bundler.CallOpts, amountIn, reserveIn, reserveOut)
-}
-
-// GetUniswapV2AmountOut is a free data retrieval call binding the contract method 0x0aadf612.
-//
-// Solidity: function getUniswapV2AmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut) pure returns(uint256 amountOut)
-func (_Bundler *BundlerCallerSession) GetUniswapV2AmountOut(amountIn *big.Int, reserveIn *big.Int, reserveOut *big.Int) (*big.Int, error) {
-	return _Bundler.Contract.GetUniswapV2AmountOut(&_Bundler.CallOpts, amountIn, reserveIn, reserveOut)
-}
-
-// GetAmountsOut is a paid mutator transaction binding the contract method 0x91aaf867.
-//
-// Solidity: function getAmountsOut((address,uint8,address,address)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
+// Solidity: function getAmountsOut((address,uint8,address,address,uint256,uint256)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
 func (_Bundler *BundlerTransactor) GetAmountsOut(opts *bind.TransactOpts, calls []SwapCall, amountIn *big.Int) (*types.Transaction, error) {
 	return _Bundler.contract.Transact(opts, "getAmountsOut", calls, amountIn)
 }
 
-// GetAmountsOut is a paid mutator transaction binding the contract method 0x91aaf867.
+// GetAmountsOut is a paid mutator transaction binding the contract method 0xa9eed001.
 //
-// Solidity: function getAmountsOut((address,uint8,address,address)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
+// Solidity: function getAmountsOut((address,uint8,address,address,uint256,uint256)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
 func (_Bundler *BundlerSession) GetAmountsOut(calls []SwapCall, amountIn *big.Int) (*types.Transaction, error) {
 	return _Bundler.Contract.GetAmountsOut(&_Bundler.TransactOpts, calls, amountIn)
 }
 
-// GetAmountsOut is a paid mutator transaction binding the contract method 0x91aaf867.
+// GetAmountsOut is a paid mutator transaction binding the contract method 0xa9eed001.
 //
-// Solidity: function getAmountsOut((address,uint8,address,address)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
+// Solidity: function getAmountsOut((address,uint8,address,address,uint256,uint256)[] calls, uint256 amountIn) returns(uint256[] amountsOut)
 func (_Bundler *BundlerTransactorSession) GetAmountsOut(calls []SwapCall, amountIn *big.Int) (*types.Transaction, error) {
 	return _Bundler.Contract.GetAmountsOut(&_Bundler.TransactOpts, calls, amountIn)
+}
+
+// GetUniswapV3AmountOut is a paid mutator transaction binding the contract method 0xb6d2cd64.
+//
+// Solidity: function getUniswapV3AmountOut(address pool, address tokenIn, address tokenOut, uint256 amountIn) returns(uint256 amountOut)
+func (_Bundler *BundlerTransactor) GetUniswapV3AmountOut(opts *bind.TransactOpts, pool common.Address, tokenIn common.Address, tokenOut common.Address, amountIn *big.Int) (*types.Transaction, error) {
+	return _Bundler.contract.Transact(opts, "getUniswapV3AmountOut", pool, tokenIn, tokenOut, amountIn)
+}
+
+// GetUniswapV3AmountOut is a paid mutator transaction binding the contract method 0xb6d2cd64.
+//
+// Solidity: function getUniswapV3AmountOut(address pool, address tokenIn, address tokenOut, uint256 amountIn) returns(uint256 amountOut)
+func (_Bundler *BundlerSession) GetUniswapV3AmountOut(pool common.Address, tokenIn common.Address, tokenOut common.Address, amountIn *big.Int) (*types.Transaction, error) {
+	return _Bundler.Contract.GetUniswapV3AmountOut(&_Bundler.TransactOpts, pool, tokenIn, tokenOut, amountIn)
+}
+
+// GetUniswapV3AmountOut is a paid mutator transaction binding the contract method 0xb6d2cd64.
+//
+// Solidity: function getUniswapV3AmountOut(address pool, address tokenIn, address tokenOut, uint256 amountIn) returns(uint256 amountOut)
+func (_Bundler *BundlerTransactorSession) GetUniswapV3AmountOut(pool common.Address, tokenIn common.Address, tokenOut common.Address, amountIn *big.Int) (*types.Transaction, error) {
+	return _Bundler.Contract.GetUniswapV3AmountOut(&_Bundler.TransactOpts, pool, tokenIn, tokenOut, amountIn)
 }

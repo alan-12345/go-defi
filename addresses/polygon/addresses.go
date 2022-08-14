@@ -8,41 +8,40 @@ import (
 )
 
 var (
-	RPC_URL                = "wss://blue-warmhearted-meme.matic.discover.quiknode.pro/1b100ebeb9f9a885b9cf7545dc79c5750d2bc8ff/"
-	MULTICALL_ADDR         = common.HexToAddress("0x275617327c958bD06b5D6b871E7f491D76113dd8")
-	UNISWAP_V3_QUOTER_ADDR = common.HexToAddress("0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6")
-	BUNDLER_ADDR           = common.HexToAddress("0x1235776939fA9D0977E04F46724930E09ed69AbD")
+	RPC_URL        = "wss://blue-warmhearted-meme.matic.discover.quiknode.pro/1b100ebeb9f9a885b9cf7545dc79c5750d2bc8ff/"
+	MULTICALL_ADDR = common.HexToAddress("0x275617327c958bD06b5D6b871E7f491D76113dd8")
+	BUNDLER_ADDR   = common.HexToAddress("0xa59a10843ffE05f2A71ed3C71E14a3507966028d")
 
 	TOKENS = map[string]constants.Token{
 		"dai": {
-			Address:   common.HexToAddress("0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"),
-			Decimals:  18,
-			Size:      big.NewInt(1e18),
+			Address:  common.HexToAddress("0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"),
+			Decimals: 18,
+			Size:     big.NewInt(1e18),
 		},
 		"usdc": {
-			Address:   common.HexToAddress("0x2791bca1f2de4661ed88a30c99a7a9449aa84174"),
-			Decimals:  6,
-			Size:      big.NewInt(1e6),
+			Address:  common.HexToAddress("0x2791bca1f2de4661ed88a30c99a7a9449aa84174"),
+			Decimals: 6,
+			Size:     big.NewInt(1e6),
 		},
 		"usdt": {
-			Address:   common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
-			Decimals:  6,
-			Size:      big.NewInt(1e6),
+			Address:  common.HexToAddress("0xc2132d05d31c914a87c6611c10748aeb04b58e8f"),
+			Decimals: 6,
+			Size:     big.NewInt(1e6),
 		},
 		"wbtc": {
-			Address:   common.HexToAddress("0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6"),
-			Decimals:  8,
-			Size:      big.NewInt(0.00005e8),
+			Address:  common.HexToAddress("0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6"),
+			Decimals: 8,
+			Size:     big.NewInt(0.00005e8),
 		},
 		"weth": {
-			Address:   common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
-			Decimals:  18,
-			Size:      big.NewInt(0.0005e18),
+			Address:  common.HexToAddress("0x7ceb23fd6bc0add59e62ac25578270cff1b9f619"),
+			Decimals: 18,
+			Size:     big.NewInt(0.0005e18),
 		},
 		"wmatic": {
-			Address:   common.HexToAddress("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"),
-			Decimals:  18,
-			Size:      big.NewInt(1e18),
+			Address:  common.HexToAddress("0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270"),
+			Decimals: 18,
+			Size:     big.NewInt(1e18),
 		},
 	}
 
@@ -52,43 +51,36 @@ var (
 		common.HexToAddress("0x45dda9cb7c25131df268515131f647d726f50608"): {
 			Name:     "usdc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x50eaedb835021e4a108b7290636d62e9765cc6d7"): {
 			Name:     "wbtc-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["weth"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x167384319b41f7094e62f7506409eb38079abff8"): {
 			Name:     "wmatic-weth (0.3%)",
 			Tokens:   []constants.Token{TOKENS["wmatic"], TOKENS["weth"]},
-			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x86f1d8390222a3691c28938ec7404a1661e618e0"): {
 			Name:     "wmatic-weth (0.05%)",
 			Tokens:   []constants.Token{TOKENS["wmatic"], TOKENS["weth"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x847b64f9d3a95e977d157866447a5c0a5dfa0ee5"): {
 			Name:     "wbtc-usdc (0.3%)",
 			Tokens:   []constants.Token{TOKENS["wbtc"], TOKENS["usdc"]},
-			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0xa374094527e1673a86de625aa59517c5de346d32"): {
 			Name:     "wmatic-usdc (0.05%)",
 			Tokens:   []constants.Token{TOKENS["wmatic"], TOKENS["usdc"]},
-			Fee:      constants.PointZeroFivePercent,
 			Protocol: "UniswapV3",
 		},
 		common.HexToAddress("0x0e44ceb592acfc5d3f09d996302eb4c499ff8c10"): {
 			Name:     "usdc-weth (0.3%)",
 			Tokens:   []constants.Token{TOKENS["usdc"], TOKENS["weth"]},
-			Fee:      constants.PointThreePercent,
 			Protocol: "UniswapV3",
 		},
 	}
@@ -131,57 +123,57 @@ var (
 		},
 	}
 
-	CURVE_STABLE_BASE_POOLS = map[common.Address]constants.Pool{
-		// common.HexToAddress("0x445fe580ef8d70ff569ab36e80c647af338db351"): {
-		// 	Name:     "3pool",
-		// 	Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"]},
-		// 	Protocol: "Curve",
-		// },
-	}
+	CURVE_STABLE_BASE_POOLS = map[common.Address]constants.Pool{}
 
-	CURVE_STABLE_UNDERLYING_POOLS = map[common.Address]constants.Pool{}
+	CURVE_STABLE_UNDERLYING_POOLS = map[common.Address]constants.Pool{
+		common.HexToAddress("0x445fe580ef8d70ff569ab36e80c647af338db351"): {
+			Name:     "aave",
+			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"]},
+			Protocol: "Curve",
+		},
+	}
 
 	CURVE_CRYPTO_BASE_POOLS = map[common.Address]constants.Pool{}
 
-	CURVE_CRYPTO_UNDERLYING_POOLS = map[common.Address]constants.Pool{}
+	CURVE_CRYPTO_UNDERLYING_POOLS = map[common.Address]constants.Pool{
+		common.HexToAddress("0x1d8b86e3d88cdb2d34688e87e72f388cb541b7c8"): {
+			Name:     "atricrypto3",
+			Tokens:   []constants.Token{TOKENS["dai"], TOKENS["usdc"], TOKENS["usdt"], TOKENS["wbtc"], TOKENS["weth"]},
+			Protocol: "Curve",
+		},
+	}
 
 	ALL_POOLS = map[common.Address]constants.Pool{}
 )
 
 func init() {
 	for k, v := range UNISWAP_V2_LIKE_POOLS {
-		v.Implementation = "UniswapV2"
-		v.SwapType = 0
+		v.SwapType = constants.SwapTypes["UniswapV2"]
 		ALL_POOLS[k] = v
 	}
 
 	for k, v := range UNISWAP_V3_POOLS {
-		v.Implementation = "UniswapV3"
-		v.SwapType = 1
+		v.SwapType = constants.SwapTypes["UniswapV3"]
 		ALL_POOLS[k] = v
 	}
 
 	for k, v := range CURVE_STABLE_BASE_POOLS {
-		v.Implementation = "CurveStableSwap"
-		v.SwapType = 2
+		v.SwapType = constants.SwapTypes["CurveStableBase"]
 		ALL_POOLS[k] = v
 	}
 
 	for k, v := range CURVE_STABLE_UNDERLYING_POOLS {
-		v.Implementation = "CurveStableSwap"
-		v.SwapType = 3
+		v.SwapType = constants.SwapTypes["CurveStableUnderlying"]
 		ALL_POOLS[k] = v
 	}
 
 	for k, v := range CURVE_CRYPTO_BASE_POOLS {
-		v.Implementation = "CurveCryptoSwap"
-		v.SwapType = 4
+		v.SwapType = constants.SwapTypes["CurveCryptoBase"]
 		ALL_POOLS[k] = v
 	}
 
 	for k, v := range CURVE_CRYPTO_UNDERLYING_POOLS {
-		v.Implementation = "CurveCryptoSwap"
-		v.SwapType = 5
+		v.SwapType = constants.SwapTypes["CurveCryptoUnderlying"]
 		ALL_POOLS[k] = v
 	}
 

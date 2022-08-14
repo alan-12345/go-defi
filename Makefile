@@ -1,4 +1,4 @@
-NETWORK := polygon
+NETWORK := ethereum
 
 build_arb:
 	go build -o arb_bot cmd/arb_bot/*.go

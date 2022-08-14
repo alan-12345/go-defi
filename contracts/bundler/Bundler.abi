@@ -1,11 +1,24 @@
 [
 	{
+		"inputs": [],
+		"name": "UNISWAP_QUOTER",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
 		"inputs": [
 			{
 				"components": [
 					{
 						"internalType": "address",
-						"name": "target",
+						"name": "pool",
 						"type": "address"
 					},
 					{
@@ -22,6 +35,16 @@
 						"internalType": "address",
 						"name": "tokenOut",
 						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "i",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "j",
+						"type": "uint256"
 					}
 				],
 				"internalType": "struct SwapCall[]",
@@ -54,15 +77,20 @@
 			},
 			{
 				"internalType": "address",
-				"name": "coin",
+				"name": "tokenIn",
 				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amountIn",
+				"type": "uint256"
 			}
 		],
-		"name": "getCurveIndex",
+		"name": "getUniswapV2AmountOut",
 		"outputs": [
 			{
 				"internalType": "uint256",
-				"name": "",
+				"name": "amountOut",
 				"type": "uint256"
 			}
 		],
@@ -78,40 +106,21 @@
 			},
 			{
 				"internalType": "address",
-				"name": "coin",
+				"name": "tokenIn",
 				"type": "address"
-			}
-		],
-		"name": "getCurveIndexUnderlying",
-		"outputs": [
+			},
 			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
+				"internalType": "address",
+				"name": "tokenOut",
+				"type": "address"
+			},
 			{
 				"internalType": "uint256",
 				"name": "amountIn",
 				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "reserveIn",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "reserveOut",
-				"type": "uint256"
 			}
 		],
-		"name": "getUniswapV2AmountOut",
+		"name": "getUniswapV3AmountOut",
 		"outputs": [
 			{
 				"internalType": "uint256",
@@ -119,20 +128,7 @@
 				"type": "uint256"
 			}
 		],
-		"stateMutability": "pure",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "UNISWAP_QUOTER",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
+		"stateMutability": "nonpayable",
 		"type": "function"
 	}
 ]
