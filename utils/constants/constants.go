@@ -29,6 +29,11 @@ type Pool struct {
 	SwapType uint8
 }
 
+type Compound struct {
+	Unitroller common.Address
+	StartBlock *big.Int
+}
+
 var (
 	ZeroAddress = common.HexToAddress("0x0000000000000000000000000000000000000000")
 	Inf         = new(big.Float).SetInf(false)
