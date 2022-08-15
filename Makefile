@@ -1,4 +1,5 @@
 NETWORK := fantom
+PATH_TO_DB := networks/${NETWORK}/db
 
 build_arb:
 	go build -o arb_bot cmd/arb_bot/*.go
@@ -10,7 +11,7 @@ build_liq:
 	go build -o liq_bot cmd/liq_bot/*.go
 
 run_liq:
-	go run cmd/liq_bot/*.go -network ${NETWORK}
+	go run cmd/liq_bot/*.go -network ${NETWORK} -db ${PATH_TO_DB}
 
 tidy:
 	go mod tidy

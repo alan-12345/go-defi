@@ -4,27 +4,29 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"go_defi/addresses/fantom"
 	"go_defi/contracts/compound/comptroller"
+	"go_defi/networks/fantom"
 	"go_defi/utils"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
 	"log"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type GlobalData struct {
+	DB                    *leveldb.DB
 	Multicaller           common.Address
 	CompoundLikeProtocols map[string]constants.Compound
 }
 
 var (
 	SELECTED_NETWORK = flag.String("network", "ethereum", "Network")
+	DB_PATH          = flag.String("db", "networks/fantom/db", "Path to DB")
 	NETWORK          constants.NetworkData
 	GLOBAL           GlobalData
 )
@@ -44,6 +46,14 @@ func setup_global_data() {
 			CompoundLikeProtocols: fantom_addresses.COMPOUND_LIKE_PROTOCOLS,
 		}
 	}
+
+	db, err := leveldb.RecoverFile(*DB_PATH, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	GLOBAL.DB = db
+	log.Println("Found and loaded DB")
 
 	client, err := ethclient.Dial(NETWORK.RPC)
 	if err != nil {
@@ -67,18 +77,19 @@ func setup_global_data() {
 type CompIncomingChans struct {
 	MarketEntered           chan *comptroller.ComptrollerMarketEntered
 	MarketExited            chan *comptroller.ComptrollerMarketExited
-	CompDistributedBorrower chan *comptroller.ComptrollerDistributedBorrowerComp
-	CompDistributedSupplier chan *comptroller.ComptrollerDistributedSupplierComp
+	DistributedBorrowerComp chan *comptroller.ComptrollerDistributedBorrowerComp
+	DistributedSupplierComp chan *comptroller.ComptrollerDistributedSupplierComp
 }
 
 type CompEventSubscriptions struct {
 	MarketEntered           event.Subscription
 	MarketExited            event.Subscription
-	CompDistributedSupplier event.Subscription
-	CompDistributedBorrower event.Subscription
+	DistributedSupplierComp event.Subscription
+	DistributedBorrowerComp event.Subscription
 }
 
 type CompoundBot struct {
+	Prefix        []byte
 	Client        *ethclient.Client
 	Protocol      constants.Compound
 	Comptroller   *comptroller.Comptroller
@@ -87,86 +98,43 @@ type CompoundBot struct {
 }
 
 type AaveBot struct {
+	Prefix []byte
 	Client *ethclient.Client
 }
 
 type Bot struct {
+	Database     *leveldb.DB
 	CompoundBots []CompoundBot
 	AaveBots     []AaveBot
 }
 
-type transaction struct {
-	Hash      string
-	From      common.Address
-	To        common.Address
-	Value     string
-	Data      string
-	Signature string
-	Gas       uint64
-	GasPrice  uint64
-}
-
-func process_pending_tx(client *ethclient.Client, raw_tx *types.Transaction) {
-	from, err := types.Sender(types.NewEIP155Signer(raw_tx.ChainId()), raw_tx)
-	if err != nil {
-		return
-	}
-
-	tx_data := hexutil.Encode(raw_tx.Data())
-	signature := tx_data
-	if tx_data != "0x" {
-		signature = tx_data[0:10]
-	}
-
-	tx := transaction{
-		Hash:      raw_tx.Hash().Hex(),
-		From:      from,
-		To:        *raw_tx.To(),
-		Value:     raw_tx.Value().String(),
-		Data:      tx_data,
-		Signature: signature,
-		Gas:       raw_tx.Gas(),
-		GasPrice:  raw_tx.GasPrice().Uint64(),
-	}
-
-	fmt.Println("Hash:", tx.Hash, tx.Signature)
-
-	if tx.Signature == "0xf8a8fd6d" {
-		fmt.Println("Hash:", tx.Hash)
-		fmt.Println("From:", tx.From)
-		fmt.Println("To:", tx.To)
-		fmt.Println("value:", tx.Value)
-		fmt.Println("Data:", tx.Data)
-		fmt.Println("Signature:", tx.Signature)
-		fmt.Println("Gas:", tx.Gas)
-		fmt.Println("Gas Price:", tx.GasPrice)
-		fmt.Println("------------------------------")
-		front_run(client, tx)
+func listen_comp_events(bots []CompoundBot) {
+	for _, bot := range bots {
+		for {
+			select {
+			case err := <-bot.Subscriptions.MarketEntered.Err():
+				log.Fatal(err)
+			case err := <-bot.Subscriptions.MarketExited.Err():
+				log.Fatal(err)
+			case err := <-bot.Subscriptions.DistributedBorrowerComp.Err():
+				log.Fatal(err)
+			case err := <-bot.Subscriptions.DistributedSupplierComp.Err():
+				log.Fatal(err)
+			case payload := <-bot.Incoming.MarketEntered:
+				fmt.Println(payload.Account)
+			case payload := <-bot.Incoming.MarketExited:
+				fmt.Println(payload.Account)
+			case payload := <-bot.Incoming.DistributedBorrowerComp:
+				fmt.Println(payload.Borrower)
+			case payload := <-bot.Incoming.DistributedSupplierComp:
+				fmt.Println(payload.Supplier)
+			}
+		}
 	}
 }
 
-func front_run(client *ethclient.Client, tx transaction) {
-	// _, err := dummycontract.NewDummy(fantom_addresses.DUMMY_ADDR, client)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// function_data := crypto.GetFunctionData("test()")
-
-	// opts := crypto.GetOpts(client)
-	// gasLimit := crypto.GetGasLimit(client, fantom_addresses.DUMMY_ADDR, function_data)
-	// fmt.Println(gasLimit)
-	// opts.GasLimit = gasLimit
-	// tx, err := dummy_contract.Test(opts)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// fmt.Printf("tx sent: %s", tx.Hash().Hex()) // tx sent: 0x8d490e535678e9a24360e955d75b27ad307bdfb97a1dca51d0f3035dcee3e870
-
-}
-
-func create_comp_subs(compound_bots *[]CompoundBot) {
-	for i, compound_bot := range *compound_bots {
+func create_comp_subs(bots *[]CompoundBot) {
+	for i, compound_bot := range *bots {
 		troller, err := comptroller.NewComptroller(compound_bot.Protocol.Unitroller, compound_bot.Client)
 		if err != nil {
 			log.Fatal(err)
@@ -183,14 +151,14 @@ func create_comp_subs(compound_bots *[]CompoundBot) {
 		}
 
 		market_comp_borrower, err := troller.WatchDistributedBorrowerComp(
-			nil, compound_bot.Incoming.CompDistributedBorrower, nil, nil,
+			nil, compound_bot.Incoming.DistributedBorrowerComp, nil, nil,
 		)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		market_comp_supplier, err := troller.WatchDistributedSupplierComp(
-			nil, compound_bot.Incoming.CompDistributedSupplier, nil, nil,
+			nil, compound_bot.Incoming.DistributedSupplierComp, nil, nil,
 		)
 		if err != nil {
 			log.Fatal(err)
@@ -201,38 +169,38 @@ func create_comp_subs(compound_bots *[]CompoundBot) {
 		compound_bot.Subscriptions = CompEventSubscriptions{
 			MarketEntered:           market_entered_sub,
 			MarketExited:            market_exited_sub,
-			CompDistributedBorrower: market_comp_borrower,
-			CompDistributedSupplier: market_comp_supplier,
+			DistributedBorrowerComp: market_comp_borrower,
+			DistributedSupplierComp: market_comp_supplier,
 		}
-		(*compound_bots)[i] = compound_bot
+		(*bots)[i] = compound_bot
 	}
 }
 
-func create_aave_subs(aave_bots *[]AaveBot) {
-
-}
+func create_aave_subs(bots *[]AaveBot) {}
 
 func create_bots() Bot {
 	var bots Bot
 	var compound_bots []CompoundBot
 	var aave_bots []AaveBot
-	for _, protocol := range GLOBAL.CompoundLikeProtocols {
+	for name, protocol := range GLOBAL.CompoundLikeProtocols {
 		client, err := ethclient.Dial(NETWORK.RPC)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		compound_bots = append(compound_bots, CompoundBot{
+			Prefix:   []byte(name + "user" + "-"),
 			Client:   client,
 			Protocol: protocol,
 			Incoming: CompIncomingChans{
 				MarketEntered:           make(chan *comptroller.ComptrollerMarketEntered),
 				MarketExited:            make(chan *comptroller.ComptrollerMarketExited),
-				CompDistributedBorrower: make(chan *comptroller.ComptrollerDistributedBorrowerComp),
-				CompDistributedSupplier: make(chan *comptroller.ComptrollerDistributedSupplierComp),
+				DistributedBorrowerComp: make(chan *comptroller.ComptrollerDistributedBorrowerComp),
+				DistributedSupplierComp: make(chan *comptroller.ComptrollerDistributedSupplierComp),
 			},
 		})
 	}
+
 	bots.CompoundBots = compound_bots
 
 	bots.AaveBots = aave_bots
@@ -244,6 +212,7 @@ func find_liqs() {
 	bots := create_bots()
 	create_comp_subs(&bots.CompoundBots)
 	create_aave_subs(&bots.AaveBots)
+	listen_comp_events(bots.CompoundBots)
 }
 
 func start_bot() {
@@ -255,63 +224,4 @@ func start_bot() {
 	setup_global_data()
 
 	find_liqs()
-
-	// rpc_client, err := rpc.Dial(config.rpc)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// client, err := ethclient.DialContext(context.Background(), config.rpc)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// ch := make(chan common.Hash, 2000)
-	// sub, err := rpc_client.EthSubscribe(context.Background(), ch, "newPendingTransactions")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// for {
-	// 	select {
-	// 	case txHash := <-ch:
-	// 		go func(txHash common.Hash) {
-	// 			defer func() {
-	// 				if r := recover(); r != nil {
-	// 					fmt.Println("recovered from panic", r)
-	// 				}
-	// 			}()
-	// 			tx, isPending, err := client.TransactionByHash(context.Background(), txHash)
-	// 			_ = err
-	// 			// if err != nil {
-	// 			// 	fmt.Println("tx %s TransactionByHash error: %s\n", txHash.String(), err.Error())
-	// 			// 	return
-	// 			// }
-	// 			// if !isPending {
-	// 			// 	receipt, err := client.TransactionReceipt(context.Background(), txHash)
-	// 			// 	if err != nil {
-	// 			// 		fmt.Println("tx %s TransactionReceipt error: %s\n", txHash.String(), err.Error())
-	// 			// 		return
-	// 			// 	}
-	// 			// 	if receipt.Status == types.ReceiptStatusFailed {
-	// 			// 		fmt.Println("tx failed")
-	// 			// 	} else if receipt.Status == types.ReceiptStatusSuccessful {
-	// 			// 		fmt.Println("tx success")
-	// 			// 	} else {
-	// 			// 		fmt.Println("unknown tx status")
-	// 			// 	}
-	// 			// 	fmt.Println("blockNumber: ", receipt.BlockNumber)
-	// 			// }
-	// 			// if err != nil {
-	// 			// 	fmt.Println("get from address: ", err)
-	// 			// 	return
-	// 			// }
-	// 			if isPending {
-	// 				process_pending_tx(client, tx)
-	// 			}
-	// 		}(txHash)
-	// 	case err := <-sub.Err():
-	// 		log.Fatal(err)
-	// 	}
-	// }
 }
