@@ -8,7 +8,10 @@ import (
 )
 
 var (
-	RPC_URL = "wss://tame-radial-butterfly.fantom.discover.quiknode.pro/6a25451fffebacfd9700b5ebf91fadb31c42f12b/"
+	// RPC_URL = "wss://tame-radial-butterfly.fantom.discover.quiknode.pro/6a25451fffebacfd9700b5ebf91fadb31c42f12b/"
+	// RPC_URL="https://rpcapi.fantom.network"
+	RPC_URL        = "wss://rpc.ankr.com/fantom/ws/09c5480d973de73d56110c6e85140402c805f6aec6b7380de71732e6e74eb16f"
+	MULTICALL_ADDR = common.HexToAddress("0xD98e3dBE5950Ca8Ce5a4b59630a5652110403E5c")
 
 	COMPOUND_LIKE_PROTOCOLS = map[string]constants.Compound{
 		"scream": {
