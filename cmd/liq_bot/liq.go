@@ -5,14 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"go_defi/contracts/compound/comptroller"
-	"go_defi/contracts/multicall"
 	"go_defi/networks/fantom"
 	"go_defi/utils"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
 	"go_defi/utils/decimal"
 	"log"
-	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -353,55 +351,35 @@ func run_bot() error {
 			return listen_comp_events(closed_bot)
 		})
 
-		g.Go(func() error {
-			var addresses []common.Address
-			iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(closed_bot.Prefix)), nil)
-			for iter.Next() {
-				account := common.HexToAddress(hexutil.Encode(iter.Value()))
-				addresses = append(addresses, account)
-			}
-			iter.Release()
-
-			var shortfall_accounts []common.Address
-			max_calls := 400
-			for start_idx := 0; start_idx < len(addresses); start_idx += max_calls {
-				var calls []multicall.Multicall2Call
-
-				end_idx := start_idx + max_calls
-				if end_idx > len(addresses) {
-					end_idx = len(addresses)
+		iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(closed_bot.Prefix)), nil)
+		for iter.Next() {
+			account := common.HexToAddress(hexutil.Encode(iter.Value()))
+			g.Go(func() error {
+				raw_err_code, _, raw_shortfall, err := closed_bot.Comptroller.GetAccountLiquidity(nil, account)
+				if err != nil {
+					return err
 				}
 
-				for _, address := range addresses[start_idx:end_idx] {
-					encoded_args := crypto.EncodeArgs(comptroller.ComptrollerMetaData.ABI, "getAccountLiquidity", address)
-					calls = append(calls, multicall.Multicall2Call{
-						Target:   closed_bot.Protocol.Unitroller,
-						CallData: encoded_args,
-					})
+				err_code := decimal.NewDecFromBigIntWithPrec(raw_err_code, 18)
+				shortfall := decimal.NewDecFromBigIntWithPrec(raw_shortfall, 18)
+				if err_code.GT(decimal.ZeroDec()) {
+					fmt.Println("error code??? :", err_code)
+					return nil
 				}
-				encoded_calls := crypto.EncodeArgs(multicall.MulticallMetaData.ABI, "aggregate", calls)
-				encoded_output := crypto.StaticCall(closed_bot.Client, GLOBAL.Multicaller, encoded_calls)
-				decoded_output := (crypto.DecodeData(multicall.MulticallMetaData.ABI, "aggregate", encoded_output)[1]).([][]byte)
-				for j, call := range decoded_output {
-					address := addresses[start_idx+j]
 
-					oops := decimal.NewDecFromBigIntWithPrec(crypto.DecodeData(comptroller.ComptrollerMetaData.ABI, "getAccountLiquidity", call)[0].(*big.Int), 18)
-					shortfall := decimal.NewDecFromBigIntWithPrec(crypto.DecodeData(comptroller.ComptrollerMetaData.ABI, "getAccountLiquidity", call)[2].(*big.Int), 18)
-
-					if !oops.IsZero() {
-						log.Println("error fetching account liquidity for", address)
-						continue
+				if shortfall.GT(decimal.ZeroDec()) {
+					c_tokens, err := closed_bot.Comptroller.GetAssetsIn(nil, account)
+					if err != nil {
+						return err
 					}
 
-					if !shortfall.IsZero() {
-						shortfall_accounts = append(shortfall_accounts, address)
-					}
+					fmt.Println(account, shortfall, c_tokens)
 				}
-			}
 
-			fmt.Println(closed_bot.Prefix, "# of shortfall accounts", len(shortfall_accounts))
-			return nil
-		})
+				return nil
+			})
+		}
+		iter.Release()
 	}
 
 	// listen_blocks()
