@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"go_defi/contracts/compound/cerc20"
 	"go_defi/contracts/compound/comptroller"
 	"go_defi/networks/fantom"
 	"go_defi/utils"
@@ -11,6 +12,7 @@ import (
 	"go_defi/utils/crypto"
 	"go_defi/utils/decimal"
 	"log"
+	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -85,6 +87,20 @@ func setup_global_data() {
 	utils.PrintDashed()
 }
 
+type BotData struct {
+	CompoundBots []CompoundBot
+	AaveBots     []AaveBot
+}
+
+type CompoundBot struct {
+	Name          string
+	Client        *ethclient.Client
+	Protocol      constants.Compound
+	Comptroller   *comptroller.Comptroller
+	Incoming      CompIncomingChans
+	Subscriptions CompEventSubscriptions
+}
+
 type CompIncomingChans struct {
 	MarketEntered           chan *comptroller.ComptrollerMarketEntered
 	MarketExited            chan *comptroller.ComptrollerMarketExited
@@ -99,23 +115,15 @@ type CompEventSubscriptions struct {
 	DistributedBorrowerComp event.Subscription
 }
 
-type CompoundBot struct {
-	Prefix        string
-	Client        *ethclient.Client
-	Protocol      constants.Compound
-	Comptroller   *comptroller.Comptroller
-	Incoming      CompIncomingChans
-	Subscriptions CompEventSubscriptions
-}
-
 type AaveBot struct {
 	Prefix []byte
 	Client *ethclient.Client
 }
 
-type BotData struct {
-	CompoundBots []CompoundBot
-	AaveBots     []AaveBot
+type CToken struct {
+	Address      common.Address
+	Amount       *big.Int
+	ExchangeRate *big.Int
 }
 
 func store_event(prefix string, account common.Address) error {
@@ -126,7 +134,7 @@ func store_event(prefix string, account common.Address) error {
 	}
 
 	var key []byte
-	key = append(key, []byte(prefix)...)
+	key = append(key, []byte(prefix+"-")...)
 	key = append(key, account[:]...)
 
 	return GLOBAL.DB.Put(key, account[:], wo)
@@ -165,7 +173,7 @@ func fetch_comp_events(bot CompoundBot) error {
 		if end_block >= current_block {
 			end_block = current_block
 		}
-		fmt.Println(bot.Prefix+"loop", start_block, end_block)
+		fmt.Println(bot.Name, "loop", start_block, end_block)
 		opts := &bind.FilterOpts{
 			Start: start_block,
 			End:   &end_block,
@@ -177,7 +185,7 @@ func fetch_comp_events(bot CompoundBot) error {
 		}
 
 		for iter_market_entered.Next() {
-			store_event(bot.Prefix, iter_market_entered.Event.Account)
+			store_event(bot.Name, iter_market_entered.Event.Account)
 		}
 
 		iter_market_exited, err := troller.FilterMarketExited(opts)
@@ -186,14 +194,14 @@ func fetch_comp_events(bot CompoundBot) error {
 		}
 
 		for iter_market_exited.Next() {
-			store_event(bot.Prefix, iter_market_exited.Event.Account)
+			store_event(bot.Name, iter_market_exited.Event.Account)
 		}
 	}
 	return nil
 }
 
 func listen_comp_events(bot CompoundBot) error {
-	fmt.Println("listening for events", bot.Prefix)
+	fmt.Println("listening for events on", bot.Name)
 	for {
 		select {
 		case err := <-bot.Subscriptions.MarketEntered.Err():
@@ -205,13 +213,13 @@ func listen_comp_events(bot CompoundBot) error {
 		case err := <-bot.Subscriptions.DistributedSupplierComp.Err():
 			return err
 		case payload := <-bot.Incoming.MarketEntered:
-			store_event(bot.Prefix, payload.Account)
+			store_event(bot.Name, payload.Account)
 		case payload := <-bot.Incoming.MarketExited:
-			store_event(bot.Prefix, payload.Account)
+			store_event(bot.Name, payload.Account)
 		case payload := <-bot.Incoming.DistributedBorrowerComp:
-			store_event(bot.Prefix, payload.Borrower)
+			store_event(bot.Name, payload.Borrower)
 		case payload := <-bot.Incoming.DistributedSupplierComp:
-			store_event(bot.Prefix, payload.Supplier)
+			store_event(bot.Name, payload.Supplier)
 		}
 	}
 }
@@ -272,7 +280,7 @@ func create_bots(bots *BotData) error {
 			return err
 		}
 		compound_bots = append(compound_bots, CompoundBot{
-			Prefix:      name + "-user-",
+			Name:        name,
 			Client:      client,
 			Protocol:    protocol,
 			Comptroller: troller,
@@ -343,43 +351,93 @@ func run_bot() error {
 
 	for _, bot := range bots.CompoundBots {
 		closed_bot := bot
-		// g.Go(func() error {
-		// 	return fetch_comp_events(closed_bot)
-		// })
+
+		// fetch_comp_events(closed_bot)
 
 		g.Go(func() error {
 			return listen_comp_events(closed_bot)
 		})
 
-		iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(closed_bot.Prefix)), nil)
-		for iter.Next() {
-			account := common.HexToAddress(hexutil.Encode(iter.Value()))
-			g.Go(func() error {
-				raw_err_code, _, raw_shortfall, err := closed_bot.Comptroller.GetAccountLiquidity(nil, account)
-				if err != nil {
-					return err
-				}
-
-				err_code := decimal.NewDecFromBigIntWithPrec(raw_err_code, 18)
-				shortfall := decimal.NewDecFromBigIntWithPrec(raw_shortfall, 18)
-				if err_code.GT(decimal.ZeroDec()) {
-					fmt.Println("error code??? :", err_code)
-					return nil
-				}
-
-				if shortfall.GT(decimal.ZeroDec()) {
-					c_tokens, err := closed_bot.Comptroller.GetAssetsIn(nil, account)
+		g.Go(func() error {
+			iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(closed_bot.Name)), nil)
+			for iter.Next() {
+				account := common.HexToAddress(hexutil.Encode(iter.Value()))
+				g.Go(func() error {
+					raw_err_code, _, raw_shortfall, err := closed_bot.Comptroller.GetAccountLiquidity(nil, account)
 					if err != nil {
 						return err
 					}
 
-					fmt.Println(account, shortfall, c_tokens)
-				}
+					err_code := decimal.NewDecFromBigIntWithPrec(raw_err_code, 18)
+					shortfall := decimal.NewDecFromBigIntWithPrec(raw_shortfall, 18)
+					if err_code.GT(decimal.ZeroDec()) {
+						fmt.Println("error code??? :", err_code)
+						return fmt.Errorf(account.String() + " getAccountLiquidity error: " + err_code.String())
+					}
 
-				return nil
-			})
-		}
-		iter.Release()
+					if shortfall.GT(decimal.ZeroDec()) {
+						c_tokens, err := closed_bot.Comptroller.GetAssetsIn(nil, account)
+						if err != nil {
+							return err
+						}
+
+						var (
+							borrows     []CToken
+							collaterals []CToken
+						)
+						for _, c_token_addr := range c_tokens {
+							c_token, err := cerc20.NewCErc20(c_token_addr, closed_bot.Client)
+							if err != nil {
+								return err
+							}
+
+							borrowed_amount, err := c_token.BorrowBalanceStored(nil, account)
+							if err != nil {
+								return err
+							}
+
+							exchange_rate, err := c_token.ExchangeRateStored(nil)
+							if err != nil {
+								return err
+							}
+
+							if borrowed_amount.Cmp(constants.OneInt) == 1 {
+								borrows = append(borrows, CToken{
+									Address:      c_token_addr,
+									Amount:       borrowed_amount,
+									ExchangeRate: exchange_rate,
+								})
+							}
+
+							c_token_balance, err := c_token.BalanceOf(nil, account)
+							if err != nil {
+								return err
+							}
+
+							if c_token_balance.Cmp(constants.OneInt) == 1 {
+								collaterals = append(collaterals, CToken{
+									Address:      c_token_addr,
+									Amount:       c_token_balance,
+									ExchangeRate: exchange_rate,
+								})
+							}
+						}
+
+						if len(borrows) > 0 {
+							fmt.Println(account)
+							fmt.Println("Shortfall", shortfall)
+							fmt.Println("Collaterals", collaterals)
+							fmt.Println("Borrows", borrows)
+							utils.PrintDashed()
+						}
+					}
+
+					return nil
+				})
+			}
+			iter.Release()
+			return nil
+		})
 	}
 
 	// listen_blocks()

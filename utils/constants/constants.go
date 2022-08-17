@@ -41,6 +41,7 @@ var (
 	One         = new(big.Float).SetFloat64(1)
 	NegOne      = new(big.Float).SetFloat64(-1)
 	Zero        = new(big.Float).SetFloat64(0)
+	OneInt      = big.NewInt(1)
 	TenInt      = big.NewInt(10)
 	SwapTypes   = map[string]uint8{
 		"UniswapV2":             0,
