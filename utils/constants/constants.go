@@ -29,8 +29,8 @@ type Pool struct {
 	SwapType uint8
 }
 
-type Compound struct {
-	Unitroller common.Address
+type LendingProtocol struct {
+	Address common.Address
 	StartBlock *big.Int
 }
 

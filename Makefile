@@ -1,4 +1,4 @@
-NETWORK := fantom
+NETWORK := ethereum
 PATH_TO_DB := networks/${NETWORK}/db
 
 build_arb:

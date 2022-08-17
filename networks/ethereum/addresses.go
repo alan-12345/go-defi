@@ -8,10 +8,13 @@ import (
 )
 
 var (
-	RPC_URL                = "wss://distinguished-holy-market.discover.quiknode.pro/8580eb52f1b8248ac369d3f4509c78016ad4b9e4/"
-	MULTICALL_ADDR         = common.HexToAddress("0x5BA1e12693Dc8F9c48aAD8770482f4739bEeD696")
-	BUNDLER_ADDR           = common.HexToAddress("0x9528e3AA3CD60030Bb34cB0b0539Ec0c0b6437c8")
+	RPC_URL        = "wss://mainnet.infura.io/ws/v3/894d958a32824076b15ba1ecbc8c4ade"
+	MULTICALL_ADDR = common.HexToAddress("0x5BA1e12693Dc8F9c48aAD8770482f4739bEeD696")
+	BUNDLER_ADDR   = common.HexToAddress("0x9528e3AA3CD60030Bb34cB0b0539Ec0c0b6437c8")
+	EVENT_FETCH_SIZE = 10000
+)
 
+var (
 	TOKENS = map[string]constants.Token{
 		"dai": {
 			Address:  common.HexToAddress("0x6b175474e89094c44da98b954eedeac495271d0f"),
@@ -178,6 +181,22 @@ var (
 	}
 
 	ALL_POOLS = map[common.Address]constants.Pool{}
+)
+
+var (
+	COMPOUND_LIKE_PROTOCOLS = map[string]constants.LendingProtocol{
+		"compound": {
+			Address: common.HexToAddress("0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B"),
+			StartBlock: big.NewInt(7710671),
+		},
+	}
+
+	AAVE_V2_LIKE_PROTOCOLS = map[string]constants.LendingProtocol {
+		"aave-v2": {
+			Address: common.HexToAddress("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9"),
+			StartBlock: big.NewInt(11362579),
+		},
+	}
 )
 
 func init() {

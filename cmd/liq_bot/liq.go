@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"go_defi/contracts/aave-v2/lending-pool"
 	"go_defi/contracts/compound/cerc20"
 	"go_defi/contracts/compound/comptroller"
+	"go_defi/networks/ethereum"
 	"go_defi/networks/fantom"
 	"go_defi/utils"
 	"go_defi/utils/constants"
@@ -32,8 +34,10 @@ import (
 
 type GlobalData struct {
 	DB                    *leveldb.DB
+	EventFetchSize        int
 	Multicaller           common.Address
-	CompoundLikeProtocols map[string]constants.Compound
+	CompoundLikeProtocols map[string]constants.LendingProtocol
+	AaveV2LikeProtocols   map[string]constants.LendingProtocol
 }
 
 var (
@@ -47,7 +51,15 @@ func setup_global_data() {
 	fmt.Println("Selected network:", *SELECTED_NETWORK)
 	switch *SELECTED_NETWORK {
 	case "ethereum":
-
+		NETWORK = constants.NetworkData{
+			RPC: ethereum_addresses.RPC_URL,
+		}
+		GLOBAL = GlobalData{
+			EventFetchSize:        ethereum_addresses.EVENT_FETCH_SIZE,
+			Multicaller:           ethereum_addresses.MULTICALL_ADDR,
+			CompoundLikeProtocols: ethereum_addresses.COMPOUND_LIKE_PROTOCOLS,
+			AaveV2LikeProtocols:   ethereum_addresses.AAVE_V2_LIKE_PROTOCOLS,
+		}
 	case "polygon":
 
 	case "fantom":
@@ -55,6 +67,7 @@ func setup_global_data() {
 			RPC: fantom_addresses.RPC_URL,
 		}
 		GLOBAL = GlobalData{
+			EventFetchSize:        fantom_addresses.EVENT_FETCH_SIZE,
 			Multicaller:           fantom_addresses.MULTICALL_ADDR,
 			CompoundLikeProtocols: fantom_addresses.COMPOUND_LIKE_PROTOCOLS,
 		}
@@ -66,7 +79,6 @@ func setup_global_data() {
 	}
 
 	GLOBAL.DB = db
-	log.Println("Found and loaded DB")
 
 	client, err := ethclient.Dial(NETWORK.RPC)
 	if err != nil {
@@ -89,19 +101,20 @@ func setup_global_data() {
 
 type BotData struct {
 	CompoundBots []CompoundBot
-	AaveBots     []AaveBot
+	AaveV2Bots   []AaveV2Bot
 }
 
 type CompoundBot struct {
 	Name          string
 	Client        *ethclient.Client
-	Protocol      constants.Compound
+	Protocol      constants.LendingProtocol
 	Comptroller   *comptroller.Comptroller
-	Incoming      CompIncomingChans
+	Incoming      CompIncomingChannels
 	Subscriptions CompEventSubscriptions
+	Shutdown      chan struct{}
 }
 
-type CompIncomingChans struct {
+type CompIncomingChannels struct {
 	MarketEntered           chan *comptroller.ComptrollerMarketEntered
 	MarketExited            chan *comptroller.ComptrollerMarketExited
 	DistributedBorrowerComp chan *comptroller.ComptrollerDistributedBorrowerComp
@@ -115,118 +128,260 @@ type CompEventSubscriptions struct {
 	DistributedBorrowerComp event.Subscription
 }
 
-type AaveBot struct {
-	Prefix []byte
-	Client *ethclient.Client
-}
-
 type CToken struct {
 	Address      common.Address
 	Amount       *big.Int
 	ExchangeRate *big.Int
 }
 
-func store_event(prefix string, account common.Address) error {
-	fmt.Println("PUT", prefix, account.String())
+type AaveV2Bot struct {
+	Name          string
+	Client        *ethclient.Client
+	Protocol      constants.LendingProtocol
+	LendingPool   *lendingpool.LendingPool
+	Incoming      AaveV2IncomingChannels
+	Subscriptions AaveV2EventSubscriptions
+	Shutdown      chan struct{}
+}
 
+type AaveV2IncomingChannels struct {
+	Deposit   chan *lendingpool.LendingPoolDeposit
+	Withdraw  chan *lendingpool.LendingPoolWithdraw
+	Borrow    chan *lendingpool.LendingPoolBorrow
+	Repay     chan *lendingpool.LendingPoolRepay
+	Swap      chan *lendingpool.LendingPoolSwap
+	Liquidate chan *lendingpool.LendingPoolLiquidationCall
+}
+
+type AaveV2EventSubscriptions struct {
+	Deposit   event.Subscription
+	Withdraw  event.Subscription
+	Borrow    event.Subscription
+	Repay     event.Subscription
+	Swap      event.Subscription
+	Liquidate event.Subscription
+}
+
+func store_event(protocol string, account common.Address) error {
+	var key []byte
+	key = append(key, []byte(protocol+"-user-")...)
+	key = append(key, account[:]...)
+
+	return store_in_db(key, account[:])
+}
+
+func store_last_fetched_block(protocol string, block_number uint64) error {
+	key := []byte(protocol + "-last-block")
+	value := big.NewInt(int64(block_number)).Bytes()
+
+	return store_in_db(key, value)
+}
+
+func store_in_db(key []byte, value []byte) error {
 	wo := &opt.WriteOptions{
 		Sync: false,
 	}
 
-	var key []byte
-	key = append(key, []byte(prefix+"-")...)
-	key = append(key, account[:]...)
-
-	return GLOBAL.DB.Put(key, account[:], wo)
-}
-
-func read_db() {
-	iter := GLOBAL.DB.NewIterator(nil, nil)
-	count := 0
-	for iter.Next() {
-		fmt.Println(string(iter.Key()), ":", hexutil.Encode(iter.Value()))
-		count++
-	}
-	iter.Release()
-	fmt.Println("# entries:", count)
+	return GLOBAL.DB.Put(key, value, wo)
 }
 
 func fetch_comp_events(bot CompoundBot) error {
-	client, err := ethclient.Dial("https://rpcapi.fantom.network")
+	start := time.Now()
+
+	current_block, err := NETWORK.Client.BlockNumber(context.Background())
 	if err != nil {
 		return err
 	}
 
-	current_block, err := client.BlockNumber(context.Background())
+	last_fetched_block_bytes, err := GLOBAL.DB.Get([]byte(bot.Name+"-last-block"), nil)
+	var last_fetched_block uint64
 	if err != nil {
-		return err
+		last_fetched_block = bot.Protocol.StartBlock.Uint64()
+	} else {
+		last_fetched_block = big.NewInt(0).SetBytes(last_fetched_block_bytes).Uint64()
 	}
 
-	troller, err := comptroller.NewComptroller(bot.Protocol.Unitroller, client)
-	if err != nil {
-		return err
-	}
-
-	interval := 500000
-	for start_block := bot.Protocol.StartBlock.Uint64(); start_block < current_block; start_block += uint64(interval) {
-		end_block := start_block + uint64(interval)
+	for start_block := last_fetched_block; start_block < current_block; start_block += uint64(GLOBAL.EventFetchSize) {
+		end_block := start_block + uint64(GLOBAL.EventFetchSize)
 		if end_block >= current_block {
 			end_block = current_block
 		}
-		fmt.Println(bot.Name, "loop", start_block, end_block)
 		opts := &bind.FilterOpts{
 			Start: start_block,
 			End:   &end_block,
 		}
 
-		iter_market_entered, err := troller.FilterMarketEntered(opts)
-		if err != nil {
+		var g errgroup.Group
+		g.Go(func() error {
+			iter_market_entered, err := bot.Comptroller.FilterMarketEntered(opts)
+			if err != nil {
+				return err
+			}
+
+			for iter_market_entered.Next() {
+				store_event(bot.Name, iter_market_entered.Event.Account)
+			}
+			iter_market_entered.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_market_exited, err := bot.Comptroller.FilterMarketExited(opts)
+			if err != nil {
+				return err
+			}
+
+			for iter_market_exited.Next() {
+				store_event(bot.Name, iter_market_exited.Event.Account)
+			}
+			iter_market_exited.Close()
+
+			return nil
+		})
+
+		if err := g.Wait(); err != nil {
 			return err
 		}
 
-		for iter_market_entered.Next() {
-			store_event(bot.Name, iter_market_entered.Event.Account)
-		}
-
-		iter_market_exited, err := troller.FilterMarketExited(opts)
-		if err != nil {
-			return err
-		}
-
-		for iter_market_exited.Next() {
-			store_event(bot.Name, iter_market_exited.Event.Account)
-		}
+		store_last_fetched_block(bot.Name, end_block)
 	}
+
+	end := time.Now()
+	log.Println(bot.Name, "Synced events in", end.Sub(start).String())
+	utils.PrintDashed()
+
 	return nil
 }
 
-func listen_comp_events(bot CompoundBot) error {
-	fmt.Println("listening for events on", bot.Name)
-	for {
-		select {
-		case err := <-bot.Subscriptions.MarketEntered.Err():
-			return err
-		case err := <-bot.Subscriptions.MarketExited.Err():
-			return err
-		case err := <-bot.Subscriptions.DistributedBorrowerComp.Err():
-			return err
-		case err := <-bot.Subscriptions.DistributedSupplierComp.Err():
-			return err
-		case payload := <-bot.Incoming.MarketEntered:
-			store_event(bot.Name, payload.Account)
-		case payload := <-bot.Incoming.MarketExited:
-			store_event(bot.Name, payload.Account)
-		case payload := <-bot.Incoming.DistributedBorrowerComp:
-			store_event(bot.Name, payload.Borrower)
-		case payload := <-bot.Incoming.DistributedSupplierComp:
-			store_event(bot.Name, payload.Supplier)
-		}
+func fetch_aave_v2_events(bot AaveV2Bot) error {
+	start := time.Now()
+
+	current_block, err := NETWORK.Client.BlockNumber(context.Background())
+	if err != nil {
+		return err
 	}
+
+	last_fetched_block_bytes, err := GLOBAL.DB.Get([]byte(bot.Name+"-last-block"), nil)
+	var last_fetched_block uint64
+	if err != nil {
+		last_fetched_block = bot.Protocol.StartBlock.Uint64()
+	} else {
+		last_fetched_block = big.NewInt(0).SetBytes(last_fetched_block_bytes).Uint64()
+	}
+
+	for start_block := last_fetched_block; start_block < current_block; start_block += uint64(GLOBAL.EventFetchSize) {
+		end_block := start_block + uint64(GLOBAL.EventFetchSize)
+		if end_block >= current_block {
+			end_block = current_block
+		}
+
+		opts := &bind.FilterOpts{
+			Start: start_block,
+			End:   &end_block,
+		}
+
+		var g errgroup.Group
+		g.Go(func() error {
+			iter_deposit, err := bot.LendingPool.FilterDeposit(opts, nil, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			for iter_deposit.Next() {
+				store_event(bot.Name, iter_deposit.Event.User)
+			}
+			iter_deposit.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_withdraw, err := bot.LendingPool.FilterWithdraw(opts, nil, nil, nil)
+			if err != nil {
+				return err
+			}
+			for iter_withdraw.Next() {
+				store_event(bot.Name, iter_withdraw.Event.User)
+			}
+			iter_withdraw.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_borrow, err := bot.LendingPool.FilterBorrow(opts, nil, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			for iter_borrow.Next() {
+				store_event(bot.Name, iter_borrow.Event.User)
+			}
+			iter_borrow.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_repay, err := bot.LendingPool.FilterRepay(opts, nil, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			for iter_repay.Next() {
+				store_event(bot.Name, iter_repay.Event.User)
+			}
+			iter_repay.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_swap, err := bot.LendingPool.FilterSwap(opts, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			for iter_swap.Next() {
+				store_event(bot.Name, iter_swap.Event.User)
+			}
+			iter_swap.Close()
+
+			return nil
+		})
+
+		g.Go(func() error {
+			iter_liquidate, err := bot.LendingPool.FilterLiquidationCall(opts, nil, nil, nil)
+			if err != nil {
+				return err
+			}
+
+			for iter_liquidate.Next() {
+				store_event(bot.Name, iter_liquidate.Event.User)
+				store_event(bot.Name, iter_liquidate.Event.Liquidator)
+			}
+			iter_liquidate.Close()
+
+			return nil
+		})
+
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		store_last_fetched_block(bot.Name, end_block)
+	}
+
+	end := time.Now()
+	log.Println(bot.Name, "Synced events in", end.Sub(start).String())
+	utils.PrintDashed()
+
+	return nil
 }
 
 func create_comp_subs(bots *[]CompoundBot) error {
 	for i, bot := range *bots {
-
 		market_entered_sub, err := bot.Comptroller.WatchMarketEntered(nil, bot.Incoming.MarketEntered)
 		if err != nil {
 			return err
@@ -263,19 +418,59 @@ func create_comp_subs(bots *[]CompoundBot) error {
 	return nil
 }
 
-func create_aave_subs(bots *[]AaveBot) error {
+func create_aave_v2_subs(bots *[]AaveV2Bot) error {
+	for i, bot := range *bots {
+		deposit, err := bot.LendingPool.WatchDeposit(nil, bot.Incoming.Deposit, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		withdraw, err := bot.LendingPool.WatchWithdraw(nil, bot.Incoming.Withdraw, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		borrow, err := bot.LendingPool.WatchBorrow(nil, bot.Incoming.Borrow, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		repay, err := bot.LendingPool.WatchRepay(nil, bot.Incoming.Repay, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		swap, err := bot.LendingPool.WatchSwap(nil, bot.Incoming.Swap, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		liquidate, err := bot.LendingPool.WatchLiquidationCall(nil, bot.Incoming.Liquidate, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		bot.Subscriptions = AaveV2EventSubscriptions{
+			Deposit:   deposit,
+			Withdraw:  withdraw,
+			Borrow:    borrow,
+			Repay:     repay,
+			Swap:      swap,
+			Liquidate: liquidate,
+		}
+		(*bots)[i] = bot
+	}
 	return nil
 }
 
-func create_bots(bots *BotData) error {
+func create_compound_bots(bots *BotData) error {
 	var compound_bots []CompoundBot
-	var aave_bots []AaveBot
 	for name, protocol := range GLOBAL.CompoundLikeProtocols {
 		client, err := ethclient.Dial(NETWORK.RPC)
 		if err != nil {
 			return err
 		}
-		troller, err := comptroller.NewComptroller(protocol.Unitroller, client)
+		troller, err := comptroller.NewComptroller(protocol.Address, client)
 		if err != nil {
 			return err
 		}
@@ -284,18 +479,48 @@ func create_bots(bots *BotData) error {
 			Client:      client,
 			Protocol:    protocol,
 			Comptroller: troller,
-			Incoming: CompIncomingChans{
+			Incoming: CompIncomingChannels{
 				MarketEntered:           make(chan *comptroller.ComptrollerMarketEntered),
 				MarketExited:            make(chan *comptroller.ComptrollerMarketExited),
 				DistributedBorrowerComp: make(chan *comptroller.ComptrollerDistributedBorrowerComp),
 				DistributedSupplierComp: make(chan *comptroller.ComptrollerDistributedSupplierComp),
 			},
+			Shutdown: make(chan struct{}),
 		})
 	}
-
 	bots.CompoundBots = compound_bots
 
-	bots.AaveBots = aave_bots
+	return nil
+}
+
+func create_aave_v2_bots(bots *BotData) error {
+	var aave_v2_bots []AaveV2Bot
+	for name, protocol := range GLOBAL.AaveV2LikeProtocols {
+		client, err := ethclient.Dial(NETWORK.RPC)
+		if err != nil {
+			return err
+		}
+		lending_pool, err := lendingpool.NewLendingPool(protocol.Address, client)
+		if err != nil {
+			return err
+		}
+		aave_v2_bots = append(aave_v2_bots, AaveV2Bot{
+			Name:        name,
+			Client:      client,
+			Protocol:    protocol,
+			LendingPool: lending_pool,
+			Incoming: AaveV2IncomingChannels{
+				Deposit:   make(chan *lendingpool.LendingPoolDeposit),
+				Withdraw:  make(chan *lendingpool.LendingPoolWithdraw),
+				Borrow:    make(chan *lendingpool.LendingPoolBorrow),
+				Repay:     make(chan *lendingpool.LendingPoolRepay),
+				Swap:      make(chan *lendingpool.LendingPoolSwap),
+				Liquidate: make(chan *lendingpool.LendingPoolLiquidationCall),
+			},
+			Shutdown: make(chan struct{}),
+		})
+	}
+	bots.AaveV2Bots = aave_v2_bots
 
 	return nil
 }
@@ -324,7 +549,12 @@ func listen_blocks() {
 
 func run_bot() error {
 	var bots BotData
-	if err := create_bots(&bots); err != nil {
+
+	if err := create_compound_bots(&bots); err != nil {
+		return err
+	}
+
+	if err := create_aave_v2_bots(&bots); err != nil {
 		return err
 	}
 
@@ -332,16 +562,20 @@ func run_bot() error {
 		return err
 	}
 
-	if err := create_aave_subs(&bots.AaveBots); err != nil {
+	if err := create_aave_v2_subs(&bots.AaveV2Bots); err != nil {
 		return err
 	}
 
-	var g errgroup.Group
+	fmt.Println("Finished creating all bots")
+	utils.PrintDashed()
 
-	g.Go(func() error {
+	var g1 errgroup.Group
+
+	g1.Go(func() error {
 		interrupt := make(chan os.Signal, 1)
 		defer signal.Stop(interrupt)
 		defer close(interrupt)
+		defer GLOBAL.DB.Close()
 		signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM)
 		<-interrupt
 		time.Sleep(time.Second)
@@ -349,99 +583,180 @@ func run_bot() error {
 		return nil
 	})
 
-	for _, bot := range bots.CompoundBots {
-		closed_bot := bot
+	g1.Go(func() error {
+		for _, bot := range bots.CompoundBots {
+			var g2 errgroup.Group
 
-		// fetch_comp_events(closed_bot)
-
-		g.Go(func() error {
-			return listen_comp_events(closed_bot)
-		})
-
-		g.Go(func() error {
-			iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(closed_bot.Name)), nil)
-			for iter.Next() {
-				account := common.HexToAddress(hexutil.Encode(iter.Value()))
-				g.Go(func() error {
-					raw_err_code, _, raw_shortfall, err := closed_bot.Comptroller.GetAccountLiquidity(nil, account)
-					if err != nil {
+			g2.Go(func() error {
+				for {
+					select {
+					case err := <-bot.Subscriptions.MarketEntered.Err():
 						return err
+					case err := <-bot.Subscriptions.MarketExited.Err():
+						return err
+					case err := <-bot.Subscriptions.DistributedBorrowerComp.Err():
+						return err
+					case err := <-bot.Subscriptions.DistributedSupplierComp.Err():
+						return err
+					case payload := <-bot.Incoming.MarketEntered:
+						store_event(bot.Name, payload.Account)
+					case payload := <-bot.Incoming.MarketExited:
+						store_event(bot.Name, payload.Account)
+					case payload := <-bot.Incoming.DistributedBorrowerComp:
+						store_event(bot.Name, payload.Borrower)
+					case payload := <-bot.Incoming.DistributedSupplierComp:
+						store_event(bot.Name, payload.Supplier)
 					}
+				}
+			})
 
-					err_code := decimal.NewDecFromBigIntWithPrec(raw_err_code, 18)
-					shortfall := decimal.NewDecFromBigIntWithPrec(raw_shortfall, 18)
-					if err_code.GT(decimal.ZeroDec()) {
-						fmt.Println("error code??? :", err_code)
-						return fmt.Errorf(account.String() + " getAccountLiquidity error: " + err_code.String())
-					}
+			bot2 := bot
 
-					if shortfall.GT(decimal.ZeroDec()) {
-						c_tokens, err := closed_bot.Comptroller.GetAssetsIn(nil, account)
+			g2.Go(func() error {
+				err := fetch_comp_events(bot2)
+				if err != nil {
+					return err
+				}
+
+				var g3 errgroup.Group
+
+				iter := GLOBAL.DB.NewIterator(util.BytesPrefix([]byte(bot2.Name+"-user-")), nil)
+				for iter.Next() {
+					account := common.HexToAddress(hexutil.Encode(iter.Value()))
+					g3.Go(func() error {
+						raw_err_code, _, raw_shortfall, err := bot2.Comptroller.GetAccountLiquidity(nil, account)
 						if err != nil {
 							return err
 						}
 
-						var (
-							borrows     []CToken
-							collaterals []CToken
-						)
-						for _, c_token_addr := range c_tokens {
-							c_token, err := cerc20.NewCErc20(c_token_addr, closed_bot.Client)
+						err_code := decimal.NewDecFromBigIntWithPrec(raw_err_code, 18)
+						shortfall := decimal.NewDecFromBigIntWithPrec(raw_shortfall, 18)
+						if err_code.GT(decimal.ZeroDec()) {
+							fmt.Println("error code??? :", err_code)
+							return fmt.Errorf(account.String() + " getAccountLiquidity error: " + err_code.String())
+						}
+
+						if shortfall.GT(decimal.ZeroDec()) {
+							c_tokens, err := bot2.Comptroller.GetAssetsIn(nil, account)
 							if err != nil {
 								return err
 							}
 
-							borrowed_amount, err := c_token.BorrowBalanceStored(nil, account)
-							if err != nil {
-								return err
+							var (
+								borrows     []CToken
+								collaterals []CToken
+							)
+							for _, c_token_addr := range c_tokens {
+								c_token, err := cerc20.NewCErc20(c_token_addr, bot2.Client)
+								if err != nil {
+									return err
+								}
+
+								borrowed_amount, err := c_token.BorrowBalanceStored(nil, account)
+								if err != nil {
+									return err
+								}
+
+								exchange_rate, err := c_token.ExchangeRateStored(nil)
+								if err != nil {
+									return err
+								}
+
+								if borrowed_amount.Cmp(constants.OneInt) == 1 {
+									borrows = append(borrows, CToken{
+										Address:      c_token_addr,
+										Amount:       borrowed_amount,
+										ExchangeRate: exchange_rate,
+									})
+								}
+
+								c_token_balance, err := c_token.BalanceOf(nil, account)
+								if err != nil {
+									return err
+								}
+
+								if c_token_balance.Cmp(constants.OneInt) == 1 {
+									collaterals = append(collaterals, CToken{
+										Address:      c_token_addr,
+										Amount:       c_token_balance,
+										ExchangeRate: exchange_rate,
+									})
+								}
 							}
 
-							exchange_rate, err := c_token.ExchangeRateStored(nil)
-							if err != nil {
-								return err
-							}
-
-							if borrowed_amount.Cmp(constants.OneInt) == 1 {
-								borrows = append(borrows, CToken{
-									Address:      c_token_addr,
-									Amount:       borrowed_amount,
-									ExchangeRate: exchange_rate,
-								})
-							}
-
-							c_token_balance, err := c_token.BalanceOf(nil, account)
-							if err != nil {
-								return err
-							}
-
-							if c_token_balance.Cmp(constants.OneInt) == 1 {
-								collaterals = append(collaterals, CToken{
-									Address:      c_token_addr,
-									Amount:       c_token_balance,
-									ExchangeRate: exchange_rate,
-								})
+							if len(borrows) > 0 {
+								fmt.Println(account)
+								fmt.Println("Shortfall", shortfall)
+								fmt.Println("Collaterals", collaterals)
+								fmt.Println("Borrows", borrows)
+								utils.PrintDashed()
 							}
 						}
 
-						if len(borrows) > 0 {
-							fmt.Println(account)
-							fmt.Println("Shortfall", shortfall)
-							fmt.Println("Collaterals", collaterals)
-							fmt.Println("Borrows", borrows)
-							utils.PrintDashed()
-						}
+						return nil
+					})
+				}
+				iter.Release()
+				if err := g3.Wait(); err != nil {
+					return err
+				}
+
+				fmt.Println(bot2.Name, "Done scanning positions")
+
+				return nil
+			})
+		}
+
+		return nil
+	})
+
+	g1.Go(func() error {
+		for _, bot := range bots.AaveV2Bots {
+			var g2 errgroup.Group
+
+			g2.Go(func() error {
+				for {
+					select {
+					case err := <-bot.Subscriptions.Deposit.Err():
+						return err
+					case err := <-bot.Subscriptions.Withdraw.Err():
+						return err
+					case err := <-bot.Subscriptions.Borrow.Err():
+						return err
+					case err := <-bot.Subscriptions.Repay.Err():
+						return err
+					case err := <-bot.Subscriptions.Swap.Err():
+						return err
+					case err := <-bot.Subscriptions.Liquidate.Err():
+						return err
+					case payload := <-bot.Incoming.Deposit:
+						store_event(bot.Name, payload.User)
+					case payload := <-bot.Incoming.Withdraw:
+						store_event(bot.Name, payload.User)
+					case payload := <-bot.Incoming.Borrow:
+						store_event(bot.Name, payload.User)
+					case payload := <-bot.Incoming.Repay:
+						store_event(bot.Name, payload.User)
+					case payload := <-bot.Incoming.Swap:
+						store_event(bot.Name, payload.User)
+					case payload := <-bot.Incoming.Liquidate:
+						store_event(bot.Name, payload.User)
+						store_event(bot.Name, payload.Liquidator)
 					}
+				}
+			})
 
-					return nil
-				})
-			}
-			iter.Release()
-			return nil
-		})
-	}
+			bot_copy := bot
 
-	// listen_blocks()
-	return g.Wait()
+			g2.Go(func() error {
+				return fetch_aave_v2_events(bot_copy)
+			})
+		}
+
+		return nil
+	})
+
+	return g1.Wait()
 }
 
 func start_bot() {
