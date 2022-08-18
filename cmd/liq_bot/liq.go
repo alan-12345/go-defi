@@ -140,7 +140,6 @@ type AaveV2Bot struct {
 	LendingPool   *lendingpool.LendingPool
 	Incoming      AaveV2IncomingChannels
 	Subscriptions AaveV2EventSubscriptions
-	Shutdown      chan struct{}
 }
 
 type AaveV2IncomingChannels struct {
