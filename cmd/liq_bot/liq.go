@@ -111,7 +111,6 @@ type CompoundBot struct {
 	Comptroller   *comptroller.Comptroller
 	Incoming      CompIncomingChannels
 	Subscriptions CompEventSubscriptions
-	Shutdown      chan struct{}
 }
 
 type CompIncomingChannels struct {
