@@ -9,9 +9,9 @@ import (
 	"strconv"
 
 	// "go_defi/networks/fantom"
-	"go_defi/networks/polygon"
 	"go_defi/contracts/bundler"
 	"go_defi/contracts/multicall"
+	"go_defi/networks/polygon"
 	"go_defi/utils/array"
 	"go_defi/utils/constants"
 	"go_defi/utils/crypto"
@@ -364,7 +364,8 @@ func filter_profitable_paths(paths *[][]Edge) {
 			// fmt.Println("Net Profit:", net)
 			// fmt.Println()
 		}
-		if max_profit.GT(decimal.ZeroDec()) {
+		profit_threshold := decimal.NewDecFromBigIntWithPrec(edge_path[0].Source.Size, edge_path[0].Source.Decimals)
+		if max_profit.GT(profit_threshold) {
 			arbs_to_take = append(arbs_to_take, edge_path)
 
 			arb_details := "Network: " + *SELECTED_NETWORK + "\n"
