@@ -549,27 +549,38 @@ func listen_blocks() {
 
 func run_bot() error {
 	var bots BotData
+	var g1 errgroup.Group
 
-	if err := create_compound_bots(&bots); err != nil {
-		return err
-	}
+	g1.Go(func() error {
+		if err := create_compound_bots(&bots); err != nil {
+			return err
+		}
 
-	if err := create_aave_v2_bots(&bots); err != nil {
-		return err
-	}
+		if err := create_comp_subs(&bots.CompoundBots); err != nil {
+			return err
+		}
 
-	if err := create_comp_subs(&bots.CompoundBots); err != nil {
-		return err
-	}
+		return nil
+	})
 
-	if err := create_aave_v2_subs(&bots.AaveV2Bots); err != nil {
-		return err
+	g1.Go(func() error {
+		if err := create_aave_v2_bots(&bots); err != nil {
+			return err
+		}
+
+		if err := create_aave_v2_subs(&bots.AaveV2Bots); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err := g1.Wait(); err != nil {
+		return nil
 	}
 
 	fmt.Println("Finished creating all bots")
 	utils.PrintDashed()
-
-	var g1 errgroup.Group
 
 	g1.Go(func() error {
 		interrupt := make(chan os.Signal, 1)
