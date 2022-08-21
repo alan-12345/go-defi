@@ -483,7 +483,6 @@ func create_compound_bots(bots *BotData) error {
 				DistributedBorrowerComp: make(chan *comptroller.ComptrollerDistributedBorrowerComp),
 				DistributedSupplierComp: make(chan *comptroller.ComptrollerDistributedSupplierComp),
 			},
-			Shutdown: make(chan struct{}),
 		})
 	}
 	bots.CompoundBots = compound_bots
@@ -515,7 +514,6 @@ func create_aave_v2_bots(bots *BotData) error {
 				Swap:      make(chan *lendingpool.LendingPoolSwap),
 				Liquidate: make(chan *lendingpool.LendingPoolLiquidationCall),
 			},
-			Shutdown: make(chan struct{}),
 		})
 	}
 	bots.AaveV2Bots = aave_v2_bots
