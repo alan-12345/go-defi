@@ -1,4 +1,4 @@
-NETWORK := ethereum
+NETWORK := fantom
 PATH_TO_DB := networks/${NETWORK}/db
 
 build_arb:
@@ -12,6 +12,9 @@ build_liq:
 
 run_liq:
 	go run cmd/liq_bot/*.go -network ${NETWORK} -db ${PATH_TO_DB}
+
+run_mev:
+	go run cmd/mev_bot/*.go -network ${NETWORK}
 
 tidy:
 	go mod tidy
