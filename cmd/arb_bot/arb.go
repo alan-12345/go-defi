@@ -304,7 +304,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 	start := time.Now()
 
 	var calls []multicall.Multicall2Call
-	iterations := 7
+	iterations := 15
 
 	for _, edge_path := range *paths {
 		start_size := edge_path[0].Source.Size
@@ -327,7 +327,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 				Target:   GLOBAL.Bundler,
 				CallData: encoded_args,
 			})
-			start_size = new(big.Int).Mul(start_size, big.NewInt(10))
+			start_size = new(big.Int).Mul(start_size, big.NewInt(2))
 		}
 	}
 
@@ -339,7 +339,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 	for i, edge_path := range *paths {
 		token_decimals := edge_path[0].Source.Decimals
 		max_profit := decimal.ZeroDec()
-		optimal_size := decimal.ZeroDec()
+		optimal_size := edge_path[0].Source.Size
 		for j := 0; j < iterations; j++ {
 			call := decoded_output[iterations*i+j]
 			decoded_data := crypto.DecodeData(bundler.BundlerMetaData.ABI, "getAmountsOut", call)[0].([]*big.Int)
@@ -348,7 +348,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 			net := end_amount.Sub(start_amount)
 			if net.GT(max_profit) {
 				max_profit = net
-				optimal_size = start_amount
+				optimal_size = decoded_data[0]
 			}
 			// for k, edge := range edge_path {
 			// 	amount_in := decimal.NewDecFromBigIntWithPrec(decoded_data[k], edge.Source.Decimals)
@@ -364,6 +364,7 @@ func filter_profitable_paths(paths *[][]Edge) {
 			// fmt.Println("Net Profit:", net)
 			// fmt.Println()
 		}
+
 		profit_threshold := decimal.NewDecFromBigIntWithPrec(edge_path[0].Source.Size, edge_path[0].Source.Decimals)
 		if max_profit.GT(profit_threshold) {
 			arbs_to_take = append(arbs_to_take, edge_path)
@@ -375,11 +376,12 @@ func filter_profitable_paths(paths *[][]Edge) {
 					" (" + edge.PoolData.Protocol + ": " + edge.PoolData.Name + ")" + "\n"
 			}
 
-			arb_details += "\nOptimal trade size: " + optimal_size.String() + " " + GLOBAL.LookUp[edge_path[0].Source.Address] + "\n"
+			arb_details += "\nOptimal trade size: " + decimal.NewDecFromBigIntWithPrec(optimal_size, token_decimals).String() + " " + GLOBAL.LookUp[edge_path[0].Source.Address] + "\n"
 			arb_details += "Net profit: " + max_profit.String() + " " + GLOBAL.LookUp[edge_path[0].Source.Address]
 			fmt.Println(arb_details)
 
 			utils.SendTelegramMessage(arb_details)
+			execute_arb(edge_path, optimal_size)
 		}
 	}
 
@@ -390,7 +392,43 @@ func filter_profitable_paths(paths *[][]Edge) {
 	utils.PrintDashed()
 }
 
-func execute_arbs(paths [][]Edge) {}
+func execute_arb(edge_path []Edge, size *big.Int) {
+	start := time.Now()
+
+	var calls []bundler.SwapCall
+	for _, edge := range edge_path {
+		i := big.NewInt(int64(array.TokenIndexOf(edge.Source, edge.PoolData.Tokens)))
+		j := big.NewInt(int64(array.TokenIndexOf(edge.Dest, edge.PoolData.Tokens)))
+		calls = append(calls, bundler.SwapCall{
+			Pool:     edge.Pool,
+			SwapType: edge.PoolData.SwapType,
+			TokenIn:  edge.Source.Address,
+			TokenOut: edge.Dest.Address,
+			I:        i,
+			J:        j,
+		})
+	}
+
+	bundler_contract, err := bundler.NewBundler(GLOBAL.Bundler, NETWORK.Client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	opts := crypto.GetOpts(NETWORK.Client)
+	encoded_call := crypto.EncodeArgs(bundler.BundlerMetaData.ABI, "flashloan", calls, size)
+	gas_limit := crypto.GetGasLimit(NETWORK.Client, GLOBAL.Bundler, encoded_call)
+	opts.GasLimit = gas_limit
+
+	tx, err := bundler_contract.Flashloan(opts, calls, size)
+	if err != nil {
+		utils.SendTelegramMessage(err.Error())
+		log.Fatal(err)
+	}
+	utils.SendTelegramMessage("Broadcast transaction: " + tx.Hash().Hex())
+
+	end := time.Now()
+	log.Println("Executed arb in", end.Sub(start).String())
+	utils.PrintDashed()
+}
 
 func find_arbs() {
 	var edges []Edge

@@ -1,4 +1,4 @@
-NETWORK := fantom
+NETWORK := polygon
 PATH_TO_DB := networks/${NETWORK}/db
 
 build_arb:
@@ -15,6 +15,9 @@ run_liq:
 
 run_mev:
 	go run cmd/mev_bot/*.go -network ${NETWORK}
+
+run_cex:
+	go run cmd/cex_bot/*.go
 
 tidy:
 	go mod tidy

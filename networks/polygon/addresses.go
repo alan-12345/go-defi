@@ -10,7 +10,7 @@ import (
 var (
 	RPC_URL        = "wss://blue-warmhearted-meme.matic.discover.quiknode.pro/1b100ebeb9f9a885b9cf7545dc79c5750d2bc8ff/"
 	MULTICALL_ADDR = common.HexToAddress("0x275617327c958bD06b5D6b871E7f491D76113dd8")
-	BUNDLER_ADDR   = common.HexToAddress("0xa59a10843ffE05f2A71ed3C71E14a3507966028d")
+	BUNDLER_ADDR   = common.HexToAddress("0x9c445FB05Fc13da70c31fb28a2B0BAe390931458")
 
 	TOKENS = map[string]constants.Token{
 		"dai": {

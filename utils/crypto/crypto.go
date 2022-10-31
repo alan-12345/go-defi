@@ -67,7 +67,7 @@ func GetGasPrice(client *ethclient.Client) *big.Int {
 		log.Fatal(err)
 	}
 
-	return gasPrice
+	return new(big.Int).Mul(gasPrice, big.NewInt(3))
 }
 
 func GetChainID(client *ethclient.Client) *big.Int {
